@@ -98,6 +98,9 @@ You can check if the thread is alive with `mumble_object.is_alive()`.
 The Mumble thread will stop if it disconnects from the server.
 This can be useful if you need to restart the thread when using a supervisor.
 
+## License
+See the [License GPL file](./LICENSE)
+If needed, Pymumble can be used and ship with another (permissive) license like the MIT or BSD one.
 
 ## Thanks
 
