@@ -119,6 +119,7 @@ channel_active = False
 channel_timer = None
 mic_active = False
 mic_timer = None
+speaker_enabled = True
 
 # 可调音频参数（默认值）
 mic_gain = 3.0
@@ -410,7 +411,7 @@ def on_sound_received(user, sound):
         pcm = sound.pcm
         if pcm:
             if not mic_active:
-                if speaker_proc:
+                if speaker_enabled and speaker_proc:
                     speaker_proc.stdin.write(pcm)
                 ptx_tx()
             channel_active = True
@@ -561,6 +562,14 @@ def on_text_received(message):
             reply = "块大小: %dms" % chunk_ms
         else:
             reply = "块大小: %dms  (/ck + /ck -)" % chunk_ms
+
+    elif cmd == "on":
+        speaker_enabled = True
+        reply = "本地喇叭已开启"
+
+    elif cmd == "off":
+        speaker_enabled = False
+        reply = "本地喇叭已关闭"
 
     elif cmd in ("local", "lo"):
         reply = start_music(mumble)
