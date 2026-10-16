@@ -367,22 +367,20 @@ def parse_cmd(text):
 
 
 def on_sound_received(user, sound):
-    """对讲模式：频道声音→本地喇叭，同时暂停mic发送防回声"""
+    """对讲模式：不播放频道声音（避免回声），仅检测频道是否有人说话"""
     global channel_active, channel_timer
-    if not listening or not speaker_proc:
+    if not listening:
         return
     try:
         pcm = sound.pcm
         if pcm:
-            speaker_proc.stdin.write(pcm)
             channel_active = True
-            print("[VAD] 频道有声音，暂停mic")
             if channel_timer:
                 channel_timer.cancel()
-            channel_timer = threading.Timer(0.8, set_channel_inactive)
+            channel_timer = threading.Timer(0.5, set_channel_inactive)
             channel_timer.start()
-    except Exception as e:
-        print("on_sound_received error: %s" % e)
+    except Exception:
+        pass
 
 
 def set_channel_inactive():
