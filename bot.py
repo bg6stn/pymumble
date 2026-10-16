@@ -312,6 +312,7 @@ def stop_mic():
 
 
 def player(mumble):
+    global speaker_proc
     time.sleep(1.0)
     while True:
         if playing:
