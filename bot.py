@@ -238,12 +238,47 @@ def parse_cmd(text):
     return t.split()
 
 
+def resolve_douyin(url):
+    """调用yt-dlp解析抖音链接，返回视频地址"""
+    try:
+        proc = subprocess.run(
+            ["yt-dlp", "-g", "--no-warnings", "--no-playlist", url],
+            capture_output=True, text=True, timeout=30
+        )
+        if proc.returncode == 0 and proc.stdout.strip():
+            return proc.stdout.strip().split("\n")[0]
+        else:
+            err = proc.stderr.strip().split("\n")[-1] if proc.stderr else "未知错误"
+            return "解析失败: " + err
+    except subprocess.TimeoutExpired:
+        return "解析超时(30秒)"
+    except Exception as e:
+        return "解析异常: " + str(e)
+
+
+DOUYIN_RE = re.compile(r'https?://(?:v\.douyin\.com|www\.douyin\.com|www\.iesdouyin\.com)/[^\s<>"\']+')
+
+
 def on_text_received(message):
     global play_mode, music_index, STATIONS
-    text = message.message.strip()
+    raw = strip_html(message.message)
     sender = message.actor
     user = mumble.users[sender]["name"] if sender in mumble.users else "未知"
 
+    # 检测抖音链接，自动解析
+    dy_match = DOUYIN_RE.search(raw)
+    if dy_match and not raw.strip().startswith("/"):
+        url = dy_match.group(0)
+        result = resolve_douyin(url)
+        try:
+            mumble.users[sender].send_text_message("抖音解析:<br/>" + result)
+        except Exception:
+            pass
+        print("[%s] 抖音链接 -> %s" % (user, url))
+        print("    %s" % result)
+        return
+
+    text = raw.strip()
     parts = parse_cmd(text)
     if not parts:
         return
