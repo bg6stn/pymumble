@@ -108,7 +108,7 @@ music_list = []
 music_index = 0
 current_proc = None
 mic_proc = None
-audio_queue = queue.Queue(maxsize=300)
+audio_queue = queue.Queue(maxsize=50)
 playing = False
 listening = False
 
@@ -187,8 +187,8 @@ def mic_listener(mumble):
     """从声卡录制mic，放入队列统一播放"""
     global mic_proc
     time.sleep(1)
-    # 用arecord录制，ALSA原生支持更稳
-    cmd = [
+    # arecord录制 -> ffmpeg音量放大
+    rec = [
         "arecord",
         "-D", MIC_DEVICE,
         "-f", "S16_LE",
@@ -198,21 +198,31 @@ def mic_listener(mumble):
         "-q",
         "-"
     ]
-    print("mic_listener: 启动录制 %s" % MIC_DEVICE)
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=CHUNK_SIZE)
-    mic_proc = proc
+    gain = [
+        "ffmpeg", "-loglevel", "error",
+        "-f", "s16le", "-ar", str(RATE), "-ac", str(CHANNELS),
+        "-i", "pipe:0",
+        "-af", "volume=5.0",
+        "-f", "s16le", "-acodec", "pcm_s16le",
+        "-"
+    ]
+    print("mic_listener: 启动录制 %s (gain=5x)" % MIC_DEVICE)
+    p1 = subprocess.Popen(rec, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    p2 = subprocess.Popen(gain, stdin=p1.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=CHUNK_SIZE)
+    p1.stdout.close()
+    mic_proc = p2
     time.sleep(0.5)
-    if proc.poll() is not None:
-        err = proc.stderr.read().decode("utf-8", errors="replace")
-        print("mic_listener: arecord启动失败: %s" % err[:500])
+    if p2.poll() is not None:
+        err = p2.stderr.read().decode("utf-8", errors="replace")
+        print("mic_listener: 启动失败: %s" % err[:500])
         return
     print("mic_listener: 录制中")
     while True:
-        if proc.poll() is not None:
-            err = proc.stderr.read().decode("utf-8", errors="replace")
+        if p2.poll() is not None:
+            err = p2.stderr.read().decode("utf-8", errors="replace")
             print("mic_listener: 进程退出: %s" % err[:300])
             break
-        data = proc.stdout.read(CHUNK_SIZE)
+        data = p2.stdout.read(CHUNK_SIZE)
         if not data:
             break
         try:
