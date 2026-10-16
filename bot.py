@@ -1,17 +1,6 @@
 #!/usr/bin/env python3
 # 播放机器人（流媒体 + 本地音乐 + 播放列表管理）
-# 所有命令以 / 开头：
-#   /p            播放/继续
-#   /t            停止
-#   /p1 /p2       切换电台
-#   /local        开始播放本地音乐
-#   /next         下一首
-#   /rand /seq /rep  播放模式
-#   /scan         重新扫描音乐目录
-#   /rm 3         删除列表第3首（只删列表，不删文件）
-#   /clear        清空播放列表
-#   /list         查看电台/歌曲列表
-#   /help         帮助
+# 所有命令以 / 开头
 import pymumble_py3
 import subprocess
 import time
@@ -20,6 +9,7 @@ import queue
 import os
 import random
 import glob
+import re
 from pymumble_py3.callbacks import (
     PYMUMBLE_CLBK_TEXTMESSAGERECEIVED as PTX,
 )
@@ -39,7 +29,7 @@ CHUNK_SIZE = int(RATE * 2 * CHUNK_MS / 1000)
 # ===== 电台列表 =====
 STATIONS = {
     "1": {"name": "中国之声", "url": "https://ngcdn001.cnr.cn/live/zgzs/index.m3u8"},
-    "2": {"name": "经济之声", "url": "https://ngcdn001.cnr.cn/live/zgzs/index.m3u8"},
+    "2": {"name": "经济之声", "url": "https://ngcdn001.cnr.cn/live/jjzs/index.m3u8"},
 }
 
 # ===== 状态 =====
@@ -51,6 +41,11 @@ music_index = 0
 current_proc = None
 audio_queue = queue.Queue(maxsize=300)
 playing = False
+
+
+def strip_html(s):
+    """去掉Mumble自动加的<a>标签"""
+    return re.sub(r'<[^>]+>', '', s).strip()
 
 
 def scan_music():
@@ -91,7 +86,7 @@ def ffmpeg_reader(url):
 
 
 def player(mumble):
-    time.sleep(1)
+    time.sleep(0.5)
     while True:
         if playing:
             try:
@@ -128,13 +123,13 @@ def start_station(mumble, sid):
     mode = "radio"
     playing = True
     threading.Thread(target=ffmpeg_reader, args=(STATIONS[sid]["url"],), daemon=True).start()
-    return "播放电台: " + STATIONS[sid]["name"]
+    return "播放电台: /p%s %s" % (sid, STATIONS[sid]["name"])
 
 
 def play_next_song(mumble):
     global music_index, mode, playing
     if not music_list:
-        return "播放列表为空，用 /scan 扫描音乐目录"
+        return "播放列表为空，用 /s 扫描音乐目录"
 
     if play_mode == "rep":
         pass
@@ -161,10 +156,10 @@ def start_music(mumble):
 
 
 def parse_cmd(text):
-    t = text.strip()
+    t = strip_html(text)
     if not t.startswith("/"):
         return None
-    t = t[1:]
+    t = t[1:].strip()
     if t.startswith("p") and len(t) >= 2 and t[1:].isdigit():
         return ["p", t[1:]]
     return t.split()
@@ -188,6 +183,9 @@ def on_text_received(message):
             reply = start_station(mumble, parts[1])
         elif mode == "music":
             reply = play_next_song(mumble)
+        elif mode == "radio":
+            s = STATIONS.get(current_station, {})
+            reply = "当前: /p%s %s\nURL: %s" % (current_station, s.get("name", "?"), s.get("url", "?"))
         else:
             reply = start_station(mumble, current_station)
 
@@ -201,8 +199,16 @@ def on_text_received(message):
     elif cmd in ("next", "n"):
         if mode == "music":
             reply = play_next_song(mumble)
+        elif mode == "radio":
+            keys = list(STATIONS.keys())
+            if len(keys) <= 1:
+                reply = "只有一个电台"
+            else:
+                idx = keys.index(current_station) if current_station in keys else 0
+                next_sid = keys[(idx + 1) % len(keys)]
+                reply = start_station(mumble, next_sid)
         else:
-            reply = "当前不在本地音乐模式，发 /lo 开始"
+            reply = "当前未播放，发 /lo 或 /p1 开始"
 
     elif cmd in ("rand", "r"):
         play_mode = "rand"
@@ -257,18 +263,34 @@ def on_text_received(message):
         reply = "\n".join(lines)
 
     elif cmd in ("add", "a"):
-        # /add 名称 url
-        if len(parts) < 3:
-            reply = "用法: /add 名称 链接"
+        if len(parts) < 2:
+            reply = "用法: /add 名称 链接  或  /add 链接"
+        elif len(parts) == 2:
+            url = parts[1]
+            name = re.sub(r'^https?://', '', url).split('/')[0]
+            new_id = str(len(STATIONS) + 1)
+            existing = [v["name"] for v in STATIONS.values()]
+            base = name
+            i = 2
+            while name in existing:
+                name = "%s%d" % (base, i)
+                i += 1
+            STATIONS[new_id] = {"name": name, "url": url}
+            reply = "已添加电台: /p%s %s" % (new_id, name)
         else:
             name = parts[1]
             url = parts[2]
             new_id = str(len(STATIONS) + 1)
+            existing = [v["name"] for v in STATIONS.values()]
+            base = name
+            i = 2
+            while name in existing:
+                name = "%s%d" % (base, i)
+                i += 1
             STATIONS[new_id] = {"name": name, "url": url}
             reply = "已添加电台: /p%s %s" % (new_id, name)
 
     elif cmd in ("del", "d"):
-        # /del 1
         if len(parts) < 2 or parts[1] not in STATIONS:
             reply = "用法: /del 1  (删除指定电台)"
         else:
@@ -280,18 +302,19 @@ def on_text_received(message):
     elif cmd in ("help", "h"):
         reply = (
             "=== 命令 (都以/开头) ===\n"
-            "/p            播放/继续\n"
+            "/p            播放/继续/查看当前\n"
             "/t            停止\n"
             "/p1 /p2       切换电台\n"
             "/lo /local    播放本地音乐\n"
-            "/n /next      下一首\n"
+            "/n /next      下一首/下一电台\n"
             "/r /rand      随机播放\n"
             "/se /seq      顺序播放\n"
             "/re /rep      单曲循环\n"
             "/s /scan      重新扫描音乐目录\n"
             "/rm 3         删除列表第3首(不删文件)\n"
             "/c /clear     清空播放列表\n"
-            "/add 名称 url 添加电台\n"
+            "/add 名称 url  添加电台\n"
+            "/add url      自动识别名称\n"
             "/del 1        删除电台\n"
             "/ls /list     查看电台和歌曲\n"
             "/h /help      本帮助"
@@ -318,7 +341,7 @@ if __name__ == "__main__":
     mumble.is_ready()
 
     print("Radio Bot 已连接 %s:%d" % (SERVER, PORT))
-    print("命令: /p /t /p1 /local /next /scan /rm /clear /list")
+    print("命令: /p /t /p1 /lo /n /r /se /re /s /rm /c /add /del /ls /h")
 
     threading.Thread(target=player, args=(mumble,), daemon=True).start()
 
