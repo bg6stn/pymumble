@@ -218,8 +218,8 @@ def mic_listener(mumble):
         "-r", str(RATE),
         "-c", "1",
         "-t", "raw",
-        "--period-size=1024",
-        "--buffer-size=4096",
+        "--period-size=512",
+        "--buffer-size=1024",
         "-q",
         "-"
     ]
