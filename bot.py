@@ -29,8 +29,7 @@ STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "state.jso
 
 RATE = 48000
 CHANNELS = 2
-CHUNK_MS = 20
-CHUNK_SIZE = int(RATE * 2 * CHANNELS * CHUNK_MS / 1000)
+# chunk_ms 和 queue_size 为全局可调参数，见下方状态区
 
 # ===== 内置央广电台（URL路径，播放时自动刷新签名）=====
 CNR_BUILTIN = [
@@ -112,8 +111,22 @@ mic_proc = None
 audio_queue = queue.Queue(maxsize=1000)
 playing = False
 listening = False
+
+# 可调音频参数（默认值）
 mic_gain = 3.0
 play_volume = 1.0
+bandwidth_kbps = 192
+chunk_ms = 20
+queue_size = 1000
+
+
+def get_chunk_size():
+    return int(RATE * 2 * CHANNELS * chunk_ms / 1000)
+
+
+def rebuild_queue():
+    global audio_queue
+    audio_queue = queue.Queue(maxsize=queue_size)
 
 
 def save_state():
@@ -170,12 +183,12 @@ def ffmpeg_reader(url):
         "-f", "s16le", "-acodec", "pcm_s16le",
         "-ar", str(RATE), "-ac", str(CHANNELS), "-"
     ]
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=CHUNK_SIZE)
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=get_chunk_size())
     current_proc = proc
     while True:
         if proc.poll() is not None:
             break
-        data = proc.stdout.read(CHUNK_SIZE)
+        data = proc.stdout.read(get_chunk_size())
         if not data:
             break
         try:
@@ -213,8 +226,8 @@ def mic_listener(mumble):
         "-"
     ]
     print("mic_listener: 启动录制 %s (单声道, gain=%.1fx)" % (MIC_DEVICE, mic_gain))
-    p1 = subprocess.Popen(rec, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=CHUNK_SIZE)
-    p2 = subprocess.Popen(gain, stdin=p1.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=CHUNK_SIZE)
+    p1 = subprocess.Popen(rec, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=get_chunk_size())
+    p2 = subprocess.Popen(gain, stdin=p1.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=get_chunk_size())
     p1.stdout.close()
     mic_proc = p2
     time.sleep(0.5)
@@ -228,7 +241,7 @@ def mic_listener(mumble):
             err = p2.stderr.read().decode("utf-8", errors="replace")
             print("mic_listener: 进程退出: %s" % err[:300])
             break
-        data = p2.stdout.read(CHUNK_SIZE)
+        data = p2.stdout.read(get_chunk_size())
         if not data:
             break
         try:
@@ -259,7 +272,7 @@ def player(mumble):
             try:
                 data = audio_queue.get(timeout=1)
                 mumble.sound_output.add_sound(data)
-                time.sleep(CHUNK_MS / 1000.0)
+                time.sleep(chunk_ms / 1000.0)
             except queue.Empty:
                 time.sleep(0.05)
         else:
@@ -424,6 +437,53 @@ def on_text_received(message):
         else:
             reply = "播放音量: %.1fx  (/vol + /vol -)" % play_volume
 
+    elif cmd == "bw":
+        global bandwidth_kbps
+        if len(parts) < 2:
+            bandwidth_kbps = 192
+            reply = "带宽恢复默认: %dkbps" % bandwidth_kbps
+        elif parts[1] == "+":
+            bandwidth_kbps = min(512, bandwidth_kbps + 16)
+            mumble.set_bandwidth(bandwidth_kbps * 1000)
+            reply = "带宽: %dkbps" % bandwidth_kbps
+        elif parts[1] == "-":
+            bandwidth_kbps = max(32, bandwidth_kbps - 16)
+            mumble.set_bandwidth(bandwidth_kbps * 1000)
+            reply = "带宽: %dkbps" % bandwidth_kbps
+        else:
+            reply = "带宽: %dkbps  (/bw + /bw -)" % bandwidth_kbps
+
+    elif cmd == "q":
+        global queue_size
+        if len(parts) < 2:
+            queue_size = 1000
+            rebuild_queue()
+            reply = "队列恢复默认: %d" % queue_size
+        elif parts[1] == "+":
+            queue_size = min(5000, queue_size + 200)
+            rebuild_queue()
+            reply = "队列: %d" % queue_size
+        elif parts[1] == "-":
+            queue_size = max(100, queue_size - 200)
+            rebuild_queue()
+            reply = "队列: %d" % queue_size
+        else:
+            reply = "队列: %d  (/q + /q -)" % queue_size
+
+    elif cmd == "ck":
+        global chunk_ms
+        if len(parts) < 2:
+            chunk_ms = 20
+            reply = "块大小恢复默认: %dms" % chunk_ms
+        elif parts[1] == "+":
+            chunk_ms = min(100, chunk_ms + 5)
+            reply = "块大小: %dms" % chunk_ms
+        elif parts[1] == "-":
+            chunk_ms = max(5, chunk_ms - 5)
+            reply = "块大小: %dms" % chunk_ms
+        else:
+            reply = "块大小: %dms  (/ck + /ck -)" % chunk_ms
+
     elif cmd in ("local", "lo"):
         reply = start_music(mumble)
 
@@ -547,6 +607,9 @@ def on_text_received(message):
             "/jt           话筒监听/退出监听\n"
             "/mic + /mic - 话筒增益±0.5\n"
             "/vol + /vol - 播放音量±0.5\n"
+            "/bw + /bw -   带宽±16kbps\n"
+            "/q + /q -     队列±200\n"
+            "/ck + /ck -   块大小±5ms\n"
             "/p1 /p2       切换电台\n"
             "/lo /local    播放本地音乐\n"
             "/n /next      下一首/下一电台\n"
