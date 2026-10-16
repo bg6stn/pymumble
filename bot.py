@@ -313,7 +313,6 @@ def stop_mic():
 
 def player(mumble):
     time.sleep(1.0)
-    global speaker_proc
     while True:
         if playing:
             try:
@@ -514,7 +513,6 @@ def on_text_received(message):
             stop_all()
             stop_mic()
             listening = True
-            global speaker_proc
             # 频道声音 → 本地喇叭
             speaker_proc = subprocess.Popen(
                 ["aplay", "-D", SPEAKER_DEVICE, "-f", "S16_LE",
@@ -617,7 +615,6 @@ def on_text_received(message):
         reply = "本地喇叭已开启 (100%)"
 
     elif cmd == "off":
-        global speaker_proc
         speaker_enabled = False
         play_volume = 0.0
         if speaker_proc:
