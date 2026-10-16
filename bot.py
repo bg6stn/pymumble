@@ -517,17 +517,20 @@ def on_text_received(message):
 
     elif cmd == "vol":
         global play_volume
+        vol_pct = int(play_volume * 100)
         if len(parts) < 2:
             play_volume = 1.0
-            reply = "播放音量恢复默认: %.1fx" % play_volume
+            reply = "播放音量恢复默认: 100%"
         elif parts[1] == "+":
-            play_volume = min(5.0, play_volume + 0.05)
-            reply = "播放音量: %.2fx" % play_volume
+            vol_pct = min(100, vol_pct + 5)
+            play_volume = vol_pct / 100.0
+            reply = "播放音量: %d%%" % vol_pct
         elif parts[1] == "-":
-            play_volume = max(0.0, play_volume - 0.05)
-            reply = "播放音量: %.2fx" % play_volume
+            vol_pct = max(5, vol_pct - 5)
+            play_volume = vol_pct / 100.0
+            reply = "播放音量: %d%%" % vol_pct
         else:
-            reply = "播放音量: %.2fx  (/vol + /vol -)" % play_volume
+            reply = "播放音量: %d%%  (/vol + /vol -)" % vol_pct
 
     elif cmd == "bw":
         global bandwidth_kbps
