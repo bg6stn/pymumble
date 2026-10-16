@@ -324,8 +324,8 @@ def player(mumble):
                         speaker_proc = subprocess.Popen(
                             ["aplay", "-D", SPEAKER_DEVICE, "-f", "S16_LE",
                              "-r", str(RATE), "-c", "2",
-                             "--buffer-time=200000",
-                             "--period-time=50000",
+                             "--buffer-time=800000",
+                             "--period-time=200000",
                              "-q"],
                             stdin=subprocess.PIPE
                         )
