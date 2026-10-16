@@ -379,6 +379,17 @@ def start_station(mumble, sid):
     return "播放电台: /p%s %s" % (sid, STATIONS[sid]["name"])
 
 
+def play_song(mumble, song):
+    global music_index, mode, playing
+    stop_mic()
+    stop_all()
+    mode = "music"
+    playing = True
+    threading.Thread(target=ffmpeg_reader, args=(song,), daemon=True).start()
+    save_state()
+    return "播放: %s" % os.path.basename(song)
+
+
 def play_next_song(mumble):
     global music_index, mode, playing
     stop_mic()
@@ -393,12 +404,7 @@ def play_next_song(mumble):
         music_index = (music_index + 1) % len(music_list)
 
     song = music_list[music_index]
-    name = os.path.basename(song)
-    stop_all()
-    mode = "music"
-    playing = True
-    threading.Thread(target=ffmpeg_reader, args=(song,), daemon=True).start()
-    save_state()
+    return play_song(mumble, song)
     return "播放[%d/%d]: %s" % (music_index + 1, len(music_list), name)
 
 
@@ -478,6 +484,14 @@ def on_text_received(message):
     if cmd == "p":
         if len(parts) >= 2 and parts[1] in STATIONS:
             reply = start_station(mumble, parts[1])
+        elif len(parts) >= 2 and parts[1].isdigit() and mode == "music":
+            idx = int(parts[1]) - 1
+            if 0 <= idx < len(music_list):
+                music_index = idx
+                play_song(mumble, music_list[idx])
+                reply = "播放: %s" % os.path.basename(music_list[idx])
+            else:
+                reply = "曲目不存在 (共%d首)" % len(music_list)
         elif mode == "music":
             reply = play_next_song(mumble)
         elif mode == "radio":
