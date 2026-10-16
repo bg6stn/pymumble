@@ -453,7 +453,7 @@ def set_mic_inactive():
 
 
 def on_text_received(message):
-    global play_mode, music_index, STATIONS, listening
+    global play_mode, music_index, STATIONS, listening, speaker_proc
     text = strip_html(message.message).strip()
     sender = message.actor
     user = mumble.users[sender]["name"] if sender in mumble.users else "未知"
@@ -584,7 +584,6 @@ def on_text_received(message):
         reply = "本地喇叭已开启"
 
     elif cmd == "off":
-        global speaker_proc
         speaker_enabled = False
         if speaker_proc:
             try:
