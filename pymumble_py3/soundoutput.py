@@ -16,12 +16,21 @@ class SoundOutput:
     """
     Class managing the sounds that must be sent to the server (best sent in a multiple of audio_per_packet samples)
     The buffering is the responsibility of the caller, any partial sound will be sent without delay
+
+    可选集成 CM108 声卡 GPIO PTT 控制：
+        传入 ptt_controller（CM108PTT 实例）后，本类会在有音频要发送时自动
+        打开发射，在音频发送结束并经过 ptt_hangtime 秒后自动关闭发射。
+        ptt_controller 为 None 时，本类行为与原版完全一致，不引入任何额外开销。
     """
 
-    def __init__(self, mumble_object, audio_per_packet, bandwidth, stereo=False, opus_profile=PYMUMBLE_AUDIO_TYPE_OPUS_PROFILE):
+    def __init__(self, mumble_object, audio_per_packet, bandwidth, stereo=False,
+                 opus_profile=PYMUMBLE_AUDIO_TYPE_OPUS_PROFILE,
+                 ptt_controller=None, ptt_hangtime=0.2):
         """
         audio_per_packet=packet audio duration in sec
         bandwidth=maximum total outgoing bandwidth
+        ptt_controller=可选的 CM108PTT 实例，None 表示不启用硬件 PTT
+        ptt_hangtime=音频发送结束后延迟多少秒再关闭 PTT（秒），默认 0.2s
         """
         self.mumble_object = mumble_object
 
@@ -46,10 +55,23 @@ class SoundOutput:
         self.sequence_last_time = 0  # time of the last emitted packet
         self.sequence = 0  # current sequence
 
+        # ---- CM108 PTT 相关状态（纯可选，不启用时完全不影响原有行为）----
+        self.ptt_controller = ptt_controller   # CM108PTT 实例或 None
+        self.ptt_hangtime = ptt_hangtime      # 释放 PTT 的延迟（秒）
+        self._ptt_lock = threading.Lock()      # 保护 PTT 状态访问
+        self._ptt_active = False              # 内部记录的 PTT 状态（与控制器同步）
+        self._ptt_last_send_time = 0.0        # 最后一次成功发送音频的时间戳
+
     def send_audio(self):
         """send the available audio to the server, taking care of the timing"""
+        # ---- PTT hangtime 检查：即使当前没有音频要发，也要定期检查是否该释放 PTT ----
+        self._update_ptt_state()
+
         if not self.encoder or len(self.pcm) == 0:  # no codec configured or no audio sent
             return ()
+
+        # ---- 有音频要发送：若 PTT 未激活则打开发射 ----
+        self._ensure_ptt_on()
 
         samples = int(self.encoder_framesize * PYMUMBLE_SAMPLERATE * 2 * self.channels)  # number of samples in an encoder frame
 
@@ -116,6 +138,56 @@ class SoundOutput:
                 if sent < 0:
                     raise socket.error("Server socket error")
                 tcppacket = tcppacket[sent:]
+
+            # 记录本次发送音频的时间戳，用于 PTT hangtime 判断
+            with self._ptt_lock:
+                self._ptt_last_send_time = time()
+
+    # ------------------------------------------------------------------
+    # CM108 PTT 辅助方法（ptt_controller 为 None 时全部为空操作）
+    # ------------------------------------------------------------------
+
+    def _ensure_ptt_on(self):
+        """
+        若已配置 PTT 控制器且当前 PTT 未激活，则打开发射。
+        ptt_controller 为 None 时直接返回，不产生任何副作用。
+        """
+        if self.ptt_controller is None:
+            return
+        with self._ptt_lock:
+            already_on = self._ptt_active
+        if already_on:
+            return
+        try:
+            self.ptt_controller.ptt_on()
+            with self._ptt_lock:
+                self._ptt_active = True
+                self._ptt_last_send_time = time()
+        except Exception as e:
+            self.Log.warning("CM108 PTT 打开发射失败: %s" % e)
+
+    def _update_ptt_state(self):
+        """
+        检查 PTT 是否需要自动释放：
+        若 PTT 已激活，且距离最后一次发送音频超过 ptt_hangtime 秒，则关闭发射。
+        ptt_controller 为 None 时直接返回。
+        """
+        if self.ptt_controller is None:
+            return
+        with self._ptt_lock:
+            active = self._ptt_active
+            last_time = self._ptt_last_send_time
+        if not active:
+            return
+        if (time() - last_time) < self.ptt_hangtime:
+            return
+        # 超过 hangtime，释放 PTT
+        try:
+            self.ptt_controller.ptt_off()
+            with self._ptt_lock:
+                self._ptt_active = False
+        except Exception as e:
+            self.Log.warning("CM108 PTT 关闭发射失败: %s" % e)
 
     def get_audio_per_packet(self):
         """return the configured length of a audio packet (in ms)"""
