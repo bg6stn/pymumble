@@ -200,7 +200,7 @@ def scan_music():
     exts = ("*.mp3", "*.wav", "*.ogg", "*.flac", "*.m4a")
     files = []
     for e in exts:
-        files.extend(glob.glob(os.path.join(MUSIC_DIR, e)))
+        files.extend(glob.glob(os.path.join(MUSIC_DIR, "**", e), recursive=True))
     music_list = sorted(files)
     music_index = 0
     return music_list
