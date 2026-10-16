@@ -10,6 +10,7 @@ import os
 import random
 import glob
 import re
+import json
 from pymumble_py3.callbacks import (
     PYMUMBLE_CLBK_TEXTMESSAGERECEIVED as PTX,
 )
@@ -20,6 +21,7 @@ PORT = 64738
 PASSWORD = ""
 NICK = "Radio-Bot"
 MUSIC_DIR = "/root/music"
+STATIONS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stations.json")
 
 RATE = 48000
 CHANNELS = 1
@@ -27,10 +29,31 @@ CHUNK_MS = 10
 CHUNK_SIZE = int(RATE * 2 * CHUNK_MS / 1000)
 
 # ===== 电台列表 =====
-STATIONS = {
+DEFAULT_STATIONS = {
     "1": {"name": "中国之声", "url": "https://ngcdn001.cnr.cn/live/zgzs/index.m3u8"},
     "2": {"name": "经济之声", "url": "https://ngcdn001.cnr.cn/live/jjzs/index.m3u8"},
 }
+
+
+def load_stations():
+    if os.path.exists(STATIONS_FILE):
+        try:
+            with open(STATIONS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return dict(DEFAULT_STATIONS)
+
+
+def save_stations():
+    try:
+        with open(STATIONS_FILE, "w", encoding="utf-8") as f:
+            json.dump(STATIONS, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+STATIONS = load_stations()
 
 # ===== 状态 =====
 mode = "idle"
@@ -276,6 +299,7 @@ def on_text_received(message):
                 name = "%s%d" % (base, i)
                 i += 1
             STATIONS[new_id] = {"name": name, "url": url}
+            save_stations()
             reply = "已添加电台: /p%s %s" % (new_id, name)
         else:
             name = parts[1]
@@ -288,6 +312,7 @@ def on_text_received(message):
                 name = "%s%d" % (base, i)
                 i += 1
             STATIONS[new_id] = {"name": name, "url": url}
+            save_stations()
             reply = "已添加电台: /p%s %s" % (new_id, name)
 
     elif cmd in ("del", "d"):
@@ -297,6 +322,7 @@ def on_text_received(message):
             sid = parts[1]
             name = STATIONS[sid]["name"]
             del STATIONS[sid]
+            save_stations()
             reply = "已删除电台: %s" % name
 
     elif cmd in ("help", "h"):
