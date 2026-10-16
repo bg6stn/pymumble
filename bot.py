@@ -617,9 +617,18 @@ def on_text_received(message):
         reply = "本地喇叭已开启 (100%)"
 
     elif cmd == "off":
+        global speaker_proc
         speaker_enabled = False
         play_volume = 0.0
-        reply = "本地喇叭已静音"
+        if speaker_proc:
+            try:
+                import os, signal
+                os.killpg(os.getpgid(speaker_proc.pid), signal.SIGKILL)
+            except Exception:
+                pass
+            speaker_proc = None
+        subprocess.run(["amixer", "set", "Speaker", "0%"], capture_output=True)
+        reply = "本地喇叭已关闭"
 
     elif cmd in ("local", "lo"):
         reply = start_music(mumble)
