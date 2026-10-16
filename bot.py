@@ -403,18 +403,27 @@ def on_text_received(message):
             threading.Thread(target=mic_listener, args=(mumble,), daemon=True).start()
             reply = "话筒监听中 (%s)，再发 /jt 退出" % MIC_DEVICE
 
-    elif cmd == "vol":
-        global mic_gain, play_volume
-        if len(parts) < 2:
-            reply = "话筒增益: %.1fx\n播放音量: %.1fx\n用法: /vol mic 5.0  或  /vol vol 2.0" % (mic_gain, play_volume)
-        elif parts[1] == "mic" and len(parts) >= 3:
-            mic_gain = float(parts[2])
-            reply = "话筒增益设为: %.1fx" % mic_gain
-        elif parts[1] == "vol" and len(parts) >= 3:
-            play_volume = float(parts[2])
-            reply = "播放音量设为: %.1fx" % play_volume
+    elif cmd == "mic":
+        global mic_gain
+        if len(parts) < 2 or parts[1] not in ("+", "-"):
+            reply = "话筒增益: %.1fx  (/mic + 增加, /mic - 减少)" % mic_gain
+        elif parts[1] == "+":
+            mic_gain = min(10.0, mic_gain + 0.5)
+            reply = "话筒增益: %.1fx" % mic_gain
         else:
-            reply = "用法: /vol mic 5.0  或  /vol vol 2.0"
+            mic_gain = max(0.5, mic_gain - 0.5)
+            reply = "话筒增益: %.1fx" % mic_gain
+
+    elif cmd == "vol":
+        global play_volume
+        if len(parts) < 2 or parts[1] not in ("+", "-"):
+            reply = "播放音量: %.1fx  (/vol + 增加, /vol - 减少)" % play_volume
+        elif parts[1] == "+":
+            play_volume = min(5.0, play_volume + 0.5)
+            reply = "播放音量: %.1fx" % play_volume
+        else:
+            play_volume = max(0.5, play_volume - 0.5)
+            reply = "播放音量: %.1fx" % play_volume
 
     elif cmd in ("local", "lo"):
         reply = start_music(mumble)
@@ -537,8 +546,8 @@ def on_text_received(message):
             "/p            播放/继续/查看当前\n"
             "/t            停止\n"
             "/jt           话筒监听/退出监听\n"
-            "/vol mic 5.0  话筒增益\n"
-            "/vol vol 2.0  播放音量\n"
+            "/mic + /mic - 话筒增益±0.5\n"
+            "/vol + /vol - 播放音量±0.5\n"
             "/p1 /p2       切换电台\n"
             "/lo /local    播放本地音乐\n"
             "/n /next      下一首/下一电台\n"
