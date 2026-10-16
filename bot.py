@@ -109,7 +109,7 @@ music_list = []
 music_index = 0
 current_proc = None
 mic_proc = None
-audio_queue = queue.Queue(maxsize=100)
+audio_queue = queue.Queue(maxsize=200)
 playing = False
 listening = False
 mic_gain = 3.0
@@ -199,6 +199,8 @@ def mic_listener(mumble):
         "-r", str(RATE),
         "-c", str(CHANNELS),
         "-t", "raw",
+        "--period-size=1024",
+        "--buffer-size=4096",
         "-q",
         "-"
     ]
@@ -211,7 +213,7 @@ def mic_listener(mumble):
         "-"
     ]
     print("mic_listener: 启动录制 %s (gain=%.1fx)" % (MIC_DEVICE, mic_gain))
-    p1 = subprocess.Popen(rec, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    p1 = subprocess.Popen(rec, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=CHUNK_SIZE)
     p2 = subprocess.Popen(gain, stdin=p1.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=CHUNK_SIZE)
     p1.stdout.close()
     mic_proc = p2
@@ -230,11 +232,11 @@ def mic_listener(mumble):
         if not data:
             break
         try:
-            audio_queue.put(data, timeout=1)
+            audio_queue.put_nowait(data)
         except queue.Full:
             try:
                 audio_queue.get_nowait()
-                audio_queue.put(data)
+                audio_queue.put_nowait(data)
             except queue.Empty:
                 pass
 
