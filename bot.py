@@ -248,7 +248,7 @@ def mic_listener(mumble):
             err = p2.stderr.read().decode("utf-8", errors="replace")
             print("mic_listener: 进程退出: %s" % err[:300])
             break
-        data = p2.stdout.read(get_chunk_size())
+        data = p2.stdout.read(RATE * 2 * 2 // 50)  # 20ms一块，即时发送
         if not data:
             break
         # 能量检测mic是否有人说话
@@ -264,7 +264,6 @@ def mic_listener(mumble):
         # 频道有人说话时不发mic
         if not channel_active:
             mumble.sound_output.add_sound(data)
-        time.sleep(chunk_ms / 1000.0)
 
 
 def stop_mic():
