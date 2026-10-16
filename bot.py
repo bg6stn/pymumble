@@ -313,11 +313,20 @@ def stop_mic():
 
 def player(mumble):
     time.sleep(1.0)
+    global speaker_proc
     while True:
         if playing:
             try:
                 data = audio_queue.get(timeout=1)
                 mumble.sound_output.add_sound(data)
+                if speaker_enabled:
+                    if not speaker_proc:
+                        speaker_proc = subprocess.Popen(
+                            ["aplay", "-D", SPEAKER_DEVICE, "-f", "S16_LE",
+                             "-r", str(RATE), "-c", "2", "-q"],
+                            stdin=subprocess.PIPE
+                        )
+                    speaker_proc.stdin.write(data)
                 time.sleep(chunk_ms / 1000.0)
             except queue.Empty:
                 time.sleep(0.05)
@@ -691,8 +700,9 @@ def on_text_received(message):
             "=== 命令 (都以/开头) ===\n"
             "/p            播放/继续/查看当前\n"
             "/t            停止\n"
-            "/jt           话筒监听/退出监听\n"
-            "/mic + /mic - 话筒增益±0.5\n"
+            "/dj           对讲模式\n"
+            "/on /off      本地喇叭开关\n"
+            "/mic + /mic - 话筒增益±1\n"
             "/vol + /vol - 播放音量±0.5\n"
             "/bw + /bw -   带宽±16kbps\n"
             "/q + /q -     队列±200\n"
