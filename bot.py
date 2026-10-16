@@ -244,14 +244,8 @@ def mic_listener(mumble):
         data = p2.stdout.read(get_chunk_size())
         if not data:
             break
-        try:
-            audio_queue.put_nowait(data)
-        except queue.Full:
-            try:
-                audio_queue.get_nowait()
-                audio_queue.put_nowait(data)
-            except queue.Empty:
-                pass
+        mumble.sound_output.add_sound(data)
+        time.sleep(chunk_ms / 1000.0)
 
 
 def stop_mic():
@@ -268,7 +262,7 @@ def stop_mic():
 def player(mumble):
     time.sleep(1.0)
     while True:
-        if playing or listening:
+        if playing:
             try:
                 data = audio_queue.get(timeout=1)
                 mumble.sound_output.add_sound(data)
@@ -357,19 +351,13 @@ def parse_cmd(text):
 
 
 def on_sound_received(mumble, sound, user):
-    """监听模式下，把频道其他人的声音放入队列转发（双向）"""
+    """监听模式下，把频道其他人的声音直接转发（双工）"""
     if not listening:
         return
     try:
         pcm = sound.pcm
         if pcm:
-            audio_queue.put_nowait(pcm)
-    except queue.Full:
-        try:
-            audio_queue.get_nowait()
-            audio_queue.put_nowait(pcm)
-        except queue.Empty:
-            pass
+            mumble.sound_output.add_sound(pcm)
     except Exception:
         pass
 
