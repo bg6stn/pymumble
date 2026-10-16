@@ -313,7 +313,7 @@ def stop_mic():
 
 def player(mumble):
     time.sleep(1.0)
-    global speaker_proc, speaker_gain_proc
+    global speaker_proc
     while True:
         if playing:
             try:
@@ -588,18 +588,7 @@ def on_text_received(message):
 
     elif cmd == "off":
         speaker_enabled = False
-        if speaker_proc:
-            try:
-                import os, signal
-                os.killpg(os.getpgid(speaker_proc.pid), signal.SIGTERM)
-                speaker_proc.wait(timeout=2)
-            except Exception:
-                try:
-                    os.killpg(os.getpgid(speaker_proc.pid), signal.SIGKILL)
-                except Exception:
-                    pass
-            speaker_proc = None
-        reply = "本地喇叭已关闭"
+        reply = "本地喇叭已关闭（/on恢复）"
 
     elif cmd in ("local", "lo"):
         reply = start_music(mumble)
