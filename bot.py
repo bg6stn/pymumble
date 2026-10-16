@@ -357,13 +357,19 @@ def parse_cmd(text):
 
 
 def on_sound_received(mumble, sound, user):
-    """监听模式下，把频道其他人的声音也转发出去（双向）"""
+    """监听模式下，把频道其他人的声音放入队列转发（双向）"""
     if not listening:
         return
     try:
         pcm = sound.pcm
         if pcm:
-            mumble.sound_output.add_sound(pcm)
+            audio_queue.put_nowait(pcm)
+    except queue.Full:
+        try:
+            audio_queue.get_nowait()
+            audio_queue.put_nowait(pcm)
+        except queue.Empty:
+            pass
     except Exception:
         pass
 
