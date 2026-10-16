@@ -11,6 +11,7 @@ import random
 import glob
 import re
 import json
+import urllib.request
 from pymumble_py3.callbacks import (
     PYMUMBLE_CLBK_TEXTMESSAGERECEIVED as PTX,
 )
@@ -31,8 +32,42 @@ CHUNK_SIZE = int(RATE * 2 * CHUNK_MS / 1000)
 # ===== 电台列表 =====
 DEFAULT_STATIONS = {
     "1": {"name": "中国之声", "url": "https://ngcdn001.cnr.cn/live/zgzs/index.m3u8"},
-    "2": {"name": "经济之声", "url": "https://ngcdn001.cnr.cn/live/jjzs/index.m3u8"},
+    "2": {"name": "经济之声", "url": "https://ngcdn002.cnr.cn/live/jjzs/index.m3u8"},
 }
+
+# 央广频道路径映射（用于自动刷新签名）
+CNR_CHANNELS = {
+    "zgzs": "中国之声", "jjzs": "经济之声", "yyzs": "音乐之声",
+    "dszs": "经典音乐广播", "zhzs": "台海之声", "szzs": "神州之声",
+    "hxzs": "大湾区之声", "xgzs": "香港之声", "mzzs": "民族之声",
+    "wyzs": "文艺之声", "lnzs": "老年之声", "zygb": "藏语广播",
+    "wygb": "维语广播", "gsgljtgb": "中国交通广播", "xczs": "中国乡村之声",
+    "hygb": "哈语广播",
+}
+
+
+def refresh_cnr_urls():
+    """从央广API获取带签名的最新URL，返回 {路径: url}"""
+    try:
+        req = urllib.request.Request(
+            "https://apppc.cnr.cn/national",
+            data=b'{}',
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read())
+        result = {}
+        for cat in data.get("data", {}).get("categories", []):
+            for item in cat.get("detail", []):
+                for s in item.get("other_info11", []):
+                    url = s.get("url", "")
+                    m = re.search(r'/live/([a-z0-9]+)/', url)
+                    if m:
+                        result[m.group(1)] = url
+        return result
+    except Exception:
+        return {}
 
 
 def load_stations():
@@ -109,7 +144,7 @@ def ffmpeg_reader(url):
 
 
 def player(mumble):
-    time.sleep(0.5)
+    time.sleep(1.0)
     while True:
         if playing:
             try:
@@ -145,7 +180,14 @@ def start_station(mumble, sid):
     current_station = sid
     mode = "radio"
     playing = True
-    threading.Thread(target=ffmpeg_reader, args=(STATIONS[sid]["url"],), daemon=True).start()
+    url = STATIONS[sid]["url"]
+    # 央广电台自动刷新签名
+    m = re.search(r'/live/([a-z0-9]+)/', url)
+    if m:
+        fresh = refresh_cnr_urls()
+        if m.group(1) in fresh:
+            url = fresh[m.group(1)]
+    threading.Thread(target=ffmpeg_reader, args=(url,), daemon=True).start()
     return "播放电台: /p%s %s" % (sid, STATIONS[sid]["name"])
 
 
