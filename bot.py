@@ -313,7 +313,7 @@ def stop_mic():
 
 def player(mumble):
     time.sleep(1.0)
-    global speaker_proc
+    global speaker_proc, speaker_gain_proc
     while True:
         if playing:
             try:
@@ -322,18 +322,24 @@ def player(mumble):
                 if speaker_enabled:
                     if not speaker_proc:
                         speaker_proc = subprocess.Popen(
-                            ["aplay", "-D", SPEAKER_DEVICE, "-f", "S16_LE",
-                             "-r", str(RATE), "-c", "2", "-q"],
-                            stdin=subprocess.PIPE
+                            ["ffmpeg", "-loglevel", "error",
+                             "-f", "s16le", "-ar", str(RATE), "-ac", "2",
+                             "-i", "pipe:0",
+                             "-af", "volume=%.2f" % play_volume,
+                             "-f", "s16le", "-"
+                             "| aplay -D %s -f S16_LE -r %d -c 2 -q" % (SPEAKER_DEVICE, RATE)],
+                            stdin=subprocess.PIPE, shell=True
                         )
-                    # 应用本地音量
-                    import struct as _s
-                    samples = _s.unpack("<%dh" % (len(data) // 2), data)
-                    adjusted = [max(-32768, min(32767, int(s * play_volume))) for s in samples]
-                    speaker_proc.stdin.write(_s.pack("<%dh" % len(adjusted), *adjusted))
+                    try:
+                        speaker_proc.stdin.write(data)
+                    except BrokenPipeError:
+                        speaker_proc = None
                 time.sleep(chunk_ms / 1000.0)
             except queue.Empty:
                 time.sleep(0.05)
+            except Exception as e:
+                print("player error: %s" % e)
+                time.sleep(0.5)
         else:
             time.sleep(0.1)
 
