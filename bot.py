@@ -214,6 +214,7 @@ def mic_listener(mumble):
         if not data:
             break
         mumble.sound_output.add_sound(data)
+        time.sleep(CHUNK_MS / 1000.0)
 
 
 def stop_mic():
