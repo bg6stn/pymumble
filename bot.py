@@ -240,9 +240,10 @@ def parse_cmd(text):
 
 def resolve_douyin(url):
     """调用yt-dlp解析抖音链接，返回视频地址"""
+    import sys
     try:
         proc = subprocess.run(
-            ["yt-dlp", "-g", "--no-warnings", "--no-playlist", url],
+            [sys.executable, "-m", "yt_dlp", "-g", "--no-warnings", "--no-playlist", url],
             capture_output=True, text=True, timeout=30
         )
         if proc.returncode == 0 and proc.stdout.strip():
