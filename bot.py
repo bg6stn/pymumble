@@ -376,17 +376,19 @@ def on_sound_received(user, sound):
         if pcm:
             speaker_proc.stdin.write(pcm)
             channel_active = True
+            print("[VAD] 频道有声音，暂停mic")
             if channel_timer:
                 channel_timer.cancel()
             channel_timer = threading.Timer(0.8, set_channel_inactive)
             channel_timer.start()
-    except Exception:
-        pass
+    except Exception as e:
+        print("on_sound_received error: %s" % e)
 
 
 def set_channel_inactive():
     global channel_active
     channel_active = False
+    print("[VAD] 频道安静，恢复mic")
 
 
 def on_text_received(message):
