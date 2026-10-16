@@ -29,8 +29,8 @@ STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "state.jso
 
 RATE = 48000
 CHANNELS = 2
-CHUNK_MS = 10
-CHUNK_SIZE = int(RATE * 2 * CHUNK_MS / 1000)
+CHUNK_MS = 20
+CHUNK_SIZE = int(RATE * 2 * CHANNELS * CHUNK_MS / 1000)
 
 # ===== 内置央广电台（URL路径，播放时自动刷新签名）=====
 CNR_BUILTIN = [
@@ -109,7 +109,7 @@ music_list = []
 music_index = 0
 current_proc = None
 mic_proc = None
-audio_queue = queue.Queue(maxsize=200)
+audio_queue = queue.Queue(maxsize=500)
 playing = False
 listening = False
 mic_gain = 3.0
@@ -588,7 +588,7 @@ if __name__ == "__main__":
 
     # 优化音质：音乐模式 + 高带宽
     mumble.set_codec_profile("audio")
-    mumble.set_bandwidth(96000)
+    mumble.set_bandwidth(128000)
 
     print("Radio Bot 已连接 %s:%d (立体声/音乐模式/128kbps)" % (SERVER, PORT))
     print("命令: /p /t /p1 /lo /n /r /se /re /s /rm /c /add /del /ls /h")
