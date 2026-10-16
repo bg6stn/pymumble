@@ -28,7 +28,7 @@ STATIONS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "statio
 STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "state.json")
 
 RATE = 48000
-CHANNELS = 1
+CHANNELS = 2
 CHUNK_MS = 10
 CHUNK_SIZE = int(RATE * 2 * CHUNK_MS / 1000)
 
@@ -580,7 +580,7 @@ if __name__ == "__main__":
     scan_music()
     print("本地音乐目录: %s, 共%d首" % (MUSIC_DIR, len(music_list)))
 
-    mumble = pymumble_py3.Mumble(SERVER, NICK, port=PORT, password=PASSWORD)
+    mumble = pymumble_py3.Mumble(SERVER, NICK, port=PORT, password=PASSWORD, stereo=True)
     mumble.callbacks.set_callback(PTX, on_text_received)
     mumble.callbacks.set_callback(PSND, on_sound_received)
     mumble.start()
