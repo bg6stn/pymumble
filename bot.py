@@ -23,6 +23,7 @@ PASSWORD = ""
 NICK = "Radio-Bot"
 MUSIC_DIR = "/root/music"
 STATIONS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stations.json")
+STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "state.json")
 
 RATE = 48000
 CHANNELS = 1
@@ -109,6 +110,34 @@ audio_queue = queue.Queue(maxsize=300)
 playing = False
 
 
+def save_state():
+    try:
+        with open(STATE_FILE, "w", encoding="utf-8") as f:
+            json.dump({
+                "mode": mode,
+                "current_station": current_station,
+                "play_mode": play_mode,
+                "music_index": music_index,
+                "last_music": music_list[music_index] if mode == "music" and 0 <= music_index < len(music_list) else None,
+            }, f, ensure_ascii=False)
+    except Exception:
+        pass
+
+
+def load_state():
+    global mode, current_station, play_mode, music_index
+    if os.path.exists(STATE_FILE):
+        try:
+            with open(STATE_FILE, "r", encoding="utf-8") as f:
+                s = json.load(f)
+            mode = s.get("mode", "idle")
+            current_station = s.get("current_station", "1")
+            play_mode = s.get("play_mode", "seq")
+            music_index = s.get("music_index", 0)
+        except Exception:
+            pass
+
+
 def strip_html(s):
     """去掉Mumble自动加的<a>标签"""
     return re.sub(r'<[^>]+>', '', s).strip()
@@ -180,6 +209,7 @@ def stop_all():
             audio_queue.get_nowait()
         except queue.Empty:
             break
+    save_state()
 
 
 def start_station(mumble, sid):
@@ -189,13 +219,13 @@ def start_station(mumble, sid):
     mode = "radio"
     playing = True
     url = STATIONS[sid]["url"]
-    # 央广电台自动刷新签名
     m = re.search(r'/live/([a-z0-9]+)/', url)
     if m:
         fresh = refresh_cnr_urls()
         if m.group(1) in fresh:
             url = fresh[m.group(1)]
     threading.Thread(target=ffmpeg_reader, args=(url,), daemon=True).start()
+    save_state()
     return "播放电台: /p%s %s" % (sid, STATIONS[sid]["name"])
 
 
@@ -217,6 +247,7 @@ def play_next_song(mumble):
     mode = "music"
     playing = True
     threading.Thread(target=ffmpeg_reader, args=(song,), daemon=True).start()
+    save_state()
     return "播放[%d/%d]: %s" % (music_index + 1, len(music_list), name)
 
 
@@ -415,6 +446,7 @@ def on_text_received(message):
 
 
 if __name__ == "__main__":
+    load_state()
     scan_music()
     print("本地音乐目录: %s, 共%d首" % (MUSIC_DIR, len(music_list)))
 
@@ -428,8 +460,19 @@ if __name__ == "__main__":
 
     threading.Thread(target=player, args=(mumble,), daemon=True).start()
 
+    # 恢复上次播放
+    if mode == "radio" and current_station in STATIONS:
+        time.sleep(1)
+        print("恢复播放电台: /p%s %s" % (current_station, STATIONS[current_station]["name"]))
+        start_station(mumble, current_station)
+    elif mode == "music" and music_list:
+        time.sleep(1)
+        print("恢复播放本地音乐: [%d/%d]" % (music_index + 1, len(music_list)))
+        play_next_song(mumble)
+
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
         print("退出")
+        save_state()
