@@ -43,11 +43,13 @@ PTT_HANGTIME = 0.2
 SPEAKER_DEVICE = "plughw:0,0"
 MIC_DEVICE     = "plughw:0,0"
 
+# ===== 音频（单声道，兼容性最好）=====
 RATE       = 48000
 CHANNELS   = 1
 FRAME_MS   = 20
-FRAME_SIZE = RATE * 2 * CHANNELS * FRAME_MS // 1000
+FRAME_SIZE = RATE * 2 * CHANNELS * FRAME_MS // 1000    # 1920
 
+# 播放缓冲
 BUFFER_FRAMES      = 50
 MAX_PCM_QUEUE      = 10
 TARGET_PCM_QUEUE   = 4
@@ -64,8 +66,10 @@ DEFAULT_MIC_GAIN  = 3.0
 DEFAULT_BW_KBPS   = 128
 DEFAULT_PLAY_MODE = "seq"
 
-# 位置保存间隔（秒）
 POSITION_SAVE_INTERVAL = 5
+
+# encoder 等待时间（秒）
+ENCODER_WAIT_MAX = 30
 
 BASE_DIR      = os.path.dirname(os.path.abspath(__file__))
 STATIONS_FILE = os.path.join(BASE_DIR, "stations.json")
@@ -142,7 +146,6 @@ def fmt_uptime(seconds):
 
 
 def fmt_duration(seconds):
-    """格式化秒为 mm:ss 或 hh:mm:ss"""
     seconds = int(seconds)
     h = seconds // 3600
     m = (seconds % 3600) // 60
@@ -156,7 +159,6 @@ def fmt_duration(seconds):
 # ==================== 状态 ====================
 class State:
     def __init__(self):
-        # 播放状态
         self.mode = "idle"
         self.current_station = "1"
         self.play_mode = DEFAULT_PLAY_MODE
@@ -165,20 +167,17 @@ class State:
         self.playing = False
         self.listening = False
 
-        # 音频参数
         self.speaker_enabled = DEFAULT_SPEAKER
         self.mic_gain = DEFAULT_MIC_GAIN
         self.play_volume = DEFAULT_VOLUME
         self.bandwidth_kbps = DEFAULT_BW_KBPS
 
-        # 会话
         self.session_id = 0
         self.lock = threading.Lock()
 
-        # 断点续播
         self.current_song_path = None
-        self.music_position = 0.0        # 当前音乐已播放秒数
-        self._position_dirty = False     # 是否需要写盘
+        self.music_position = 0.0
+        self._position_dirty = False
 
     def next_session(self):
         with self.lock:
@@ -214,9 +213,11 @@ _underrun_count = 0
 _auto_advance_lock = threading.Lock()
 _auto_advance_pending = False
 
-# 位置跟踪
 _position_lock = threading.Lock()
-_current_reader_frames = 0        # 当前 reader 已读帧数
+_current_reader_frames = 0
+
+# encoder 是否就绪
+_encoder_ready = False
 
 
 # ==================== 电台/音乐文件管理 ====================
@@ -253,24 +254,19 @@ def scan_music():
 
 # ==================== 状态持久化 ====================
 def save_state(verbose=False):
-    """把全部状态写入 state.json"""
     try:
         data = {
             "version": 2,
-            # 播放
             "mode": S.mode,
             "current_station": S.current_station,
             "play_mode": S.play_mode,
             "music_index": S.music_index,
-            # 音频参数
             "play_volume": S.play_volume,
             "speaker_enabled": S.speaker_enabled,
             "mic_gain": S.mic_gain,
             "bandwidth_kbps": S.bandwidth_kbps,
-            # 断点续播
             "current_song_path": S.current_song_path,
             "music_position": S.music_position,
-            # 时间戳
             "saved_at": time.time(),
         }
         with open(STATE_FILE, "w", encoding="utf-8") as f:
@@ -287,7 +283,6 @@ def save_state(verbose=False):
 
 
 def load_state():
-    """读取 state.json，恢复全部参数"""
     if not os.path.exists(STATE_FILE):
         print("[state] 无历史状态，使用默认值")
         return
@@ -295,19 +290,16 @@ def load_state():
         with open(STATE_FILE, "r", encoding="utf-8") as f:
             d = json.load(f)
 
-        # 播放
         S.mode = d.get("mode", "idle")
         S.current_station = d.get("current_station", "1")
         S.play_mode = d.get("play_mode", DEFAULT_PLAY_MODE)
         S.music_index = d.get("music_index", 0)
 
-        # 音频参数
         S.play_volume = float(d.get("play_volume", DEFAULT_VOLUME))
         S.speaker_enabled = bool(d.get("speaker_enabled", DEFAULT_SPEAKER))
         S.mic_gain = float(d.get("mic_gain", DEFAULT_MIC_GAIN))
         S.bandwidth_kbps = int(d.get("bandwidth_kbps", DEFAULT_BW_KBPS))
 
-        # 断点续播
         S.current_song_path = d.get("current_song_path")
         S.music_position = float(d.get("music_position", 0.0))
 
@@ -331,7 +323,6 @@ def mark_position_dirty():
 
 
 def position_saver_thread():
-    """每 POSITION_SAVE_INTERVAL 秒把播放位置写盘"""
     while True:
         try:
             time.sleep(POSITION_SAVE_INTERVAL)
@@ -371,7 +362,6 @@ def init_ptt():
 
         if not os.path.exists(PTT_DEVICE):
             print("[ptt] 设备不存在: %s" % PTT_DEVICE)
-            print("[ptt] 用 ls /dev/hidraw* 确认实际路径")
             ptt = None
             return
 
@@ -440,8 +430,10 @@ def close_speaker():
         speaker_proc = None
 
 
-def open_speaker(channels=1):
+def open_speaker(channels=None):
     global speaker_proc
+    if channels is None:
+        channels = CHANNELS
     close_speaker()
     try:
         speaker_proc = subprocess.Popen(
@@ -528,6 +520,29 @@ def get_encoder_info():
     )
 
 
+def wait_for_encoder(max_wait=ENCODER_WAIT_MAX):
+    """等待 encoder 创建，返回是否成功"""
+    global _encoder_ready
+    print("[check] 等待 encoder 创建（最多 %d 秒）..." % max_wait)
+    waited = 0
+    while waited < max_wait:
+        enc = getattr(mumble.sound_output, "encoder", None)
+        if enc is not None:
+            _encoder_ready = True
+            print("[check] encoder 已创建 (%ds): %s" % (waited, get_encoder_info()))
+            return True
+        time.sleep(1)
+        waited += 1
+        if waited % 5 == 0:
+            print("[check] 等待中 %ds... codec=%s" % (
+                waited, getattr(mumble.sound_output, "codec", None)))
+
+    _encoder_ready = False
+    print("[check] 警告: %d 秒后 encoder 仍未创建，音频发送将失败" % max_wait)
+    print("[check] codec=%s" % getattr(mumble.sound_output, "codec", None))
+    return False
+
+
 # ==================== self_mute / self_deaf ====================
 def ensure_unmuted():
     if mumble is None:
@@ -555,9 +570,16 @@ def ensure_unmuted():
 
 # ==================== 音频发送核心 ====================
 def feed_mumble(data):
+    """喂 PCM 到 Mumble。带 encoder 熔断保护"""
     global _feed_count, _feed_err_count
     if mumble is None:
         return False
+    # encoder 未就绪直接返回，不堆错误
+    try:
+        if getattr(mumble.sound_output, "encoder", None) is None:
+            return False
+    except Exception:
+        pass
     try:
         mumble.sound_output.add_sound(data)
         _feed_count += 1
@@ -583,6 +605,11 @@ def on_song_finished(my_session, path):
         _auto_advance_pending = True
 
     try:
+        # encoder 不可用时不做自动切换，避免死循环
+        if mumble is None or getattr(mumble.sound_output, "encoder", None) is None:
+            print("[auto] encoder 不可用，取消自动切换（避免死循环）")
+            return
+
         print("[auto] 歌曲结束，准备切换: %s" % os.path.basename(path))
         time.sleep(0.3)
         if my_session != S.current_session():
@@ -601,12 +628,9 @@ def on_song_finished(my_session, path):
 
 # ==================== ffmpeg 读流线程 ====================
 def ffmpeg_reader(url, my_session, is_music=False, path=None, start_pos=0.0):
-    global current_proc, _current_reader_frames
+    global current_proc
     af = "volume=%.2f" % S.play_volume if S.play_volume != 1.0 else "volume=1.0"
-    cmd = [
-        "ffmpeg", "-loglevel", "warning",
-    ]
-    # 从指定位置开始（音乐断点续播）
+    cmd = ["ffmpeg", "-loglevel", "warning"]
     if is_music and start_pos > 0:
         cmd += ["-ss", "%.3f" % start_pos]
     cmd += [
@@ -637,7 +661,6 @@ def ffmpeg_reader(url, my_session, is_music=False, path=None, start_pos=0.0):
     frame_bytes = FRAME_SIZE
     count = 0
     natural_end = False
-    # 每秒保存一次位置
     last_pos_save = time.time()
     while True:
         if my_session != S.current_session():
@@ -666,11 +689,9 @@ def ffmpeg_reader(url, my_session, is_music=False, path=None, start_pos=0.0):
                 pass
         count += 1
 
-        # 更新当前位置（每 1 秒写一次内存 + 标 dirty）
         if is_music and path:
             now = time.time()
             if now - last_pos_save >= 1.0:
-                # 已读秒数 = start_pos + 读的帧数 * 20ms
                 pos = start_pos + count * (FRAME_MS / 1000.0)
                 with _position_lock:
                     S.music_position = pos
@@ -688,7 +709,6 @@ def ffmpeg_reader(url, my_session, is_music=False, path=None, start_pos=0.0):
             pass
     print("[ffmpeg] reader 结束 url=%s frames=%d" % (url, count))
 
-    # 如果是音乐且自然结束，清位置
     if natural_end and is_music and path:
         with _position_lock:
             S.music_position = 0.0
@@ -825,7 +845,6 @@ def set_mic_inactive():
 # ==================== 播放控制 ====================
 def stop_all(save_pos=True):
     global current_proc
-    # 先把当前音乐位置写盘
     if save_pos and S.mode == "music" and S.current_song_path:
         save_state()
     S.next_session()
@@ -884,12 +903,6 @@ def start_station(sid):
 
 
 def play_song(path, is_auto=False, start_pos=None, save_pos_before=True):
-    """
-    path: 音乐文件路径
-    is_auto: 是否自动触发（避免清队列打断）
-    start_pos: 起始秒数（None 表示从 S.music_position 读）
-    save_pos_before: 切换前是否保存上一个位置
-    """
     exit_talk_mode()
     if save_pos_before and not is_auto:
         stop_all(save_pos=True)
@@ -904,15 +917,12 @@ def play_song(path, is_auto=False, start_pos=None, save_pos_before=True):
             current_proc = None
         clear_pcm()
 
-    # 决定起始位置
     if start_pos is None:
         start_pos = 0.0
     if is_auto:
         start_pos = 0.0
 
-    # 如果是同一首歌且是自动切换（循环），从 0 开始
     if S.current_song_path == path and not is_auto:
-        # 用户手动重播同一首 → 从 0 开始
         start_pos = 0.0
 
     S.mode = "music"
@@ -1019,6 +1029,7 @@ def build_status():
     lines.append("当前模式: %s" % mode_map.get(S.mode, S.mode))
     lines.append("正在播放: %s" % ("是" if S.playing else "否"))
     lines.append("对讲模式: %s" % ("是" if S.listening else "否"))
+    lines.append("音频声道: %d (%s)" % (CHANNELS, "立体声" if CHANNELS == 2 else "单声道"))
 
     if S.mode == "radio":
         st = STATIONS.get(S.current_station, {})
@@ -1068,9 +1079,10 @@ def build_status():
         try:
             so = mumble.sound_output
             enc = "OK" if getattr(so, "encoder", None) else "NONE"
-            lines.append("Opus编码器: %s (codec_type=%s, bw=%s)" % (
+            lines.append("Opus编码器: %s (codec_type=%s, bw=%s, ch=%s)" % (
                 enc, getattr(so, "codec_type", "?"),
-                getattr(so, "bandwidth", "?")))
+                getattr(so, "bandwidth", "?"),
+                getattr(so, "channels", "?")))
         except Exception:
             lines.append("Opus编码器: 无法读取")
 
@@ -1100,7 +1112,6 @@ def build_status():
         except Exception:
             pass
 
-    # 状态文件
     if os.path.exists(STATE_FILE):
         try:
             age = time.time() - os.path.getmtime(STATE_FILE)
@@ -1177,7 +1188,7 @@ def on_text_received(message):
             set_auto_ptt(False)
             S.listening = True
             S.mode = "talk"
-            open_speaker(1)
+            open_speaker(CHANNELS)
             threading.Thread(target=mic_listener, daemon=True).start()
             reply = "对讲中（话筒<->频道），发 /dj 退出"
 
@@ -1298,21 +1309,18 @@ def on_text_received(message):
     elif cmd in ("z", "status"):
         reply = build_status()
 
-    # ===== 记忆功能命令 =====
     elif cmd == "save":
         save_state(verbose=True)
         reply = "已保存当前状态（含播放位置 %.1fs）" % S.music_position
 
     elif cmd == "load":
         load_state()
-        # 应用音量到 amixer
         v = int(S.play_volume * 100)
         subprocess.run(["amixer", "set", "Speaker", "%d%%" % v], capture_output=True)
         reply = "已重载状态: 音量 %d%%, 喇叭 %s, 增益 %.1fx" % (
             v, "开" if S.speaker_enabled else "关", S.mic_gain)
 
     elif cmd == "forget":
-        # 清除记忆
         if os.path.exists(STATE_FILE):
             try:
                 os.remove(STATE_FILE)
@@ -1320,7 +1328,7 @@ def on_text_received(message):
                 pass
         S.music_position = 0.0
         S.current_song_path = None
-        reply = "已清除记忆（下次启动从默认状态开始）"
+        reply = "已清除记忆"
 
     elif cmd in ("add", "a"):
         if len(parts) < 2:
@@ -1363,7 +1371,7 @@ def on_text_received(message):
             "/t            停止\n"
             "/dj           对讲模式\n"
             "/z            查看运行状态\n"
-            "/save         手动保存状态（含位置）\n"
+            "/save         手动保存状态\n"
             "/load         重载状态\n"
             "/forget       清除记忆\n"
             "/on /off      本地喇叭\n"
@@ -1404,12 +1412,13 @@ def main():
     print("本地音乐目录: %s, 共%d首" % (MUSIC_DIR, len(S.music_list)))
     print("PTT 配置: device=%s, GPIO=%d, invert=%s" % (
         PTT_DEVICE, PTT_GPIO_PIN, PTT_INVERT))
+    print("音频参数: %d Hz, %d 声道 (%s), 帧 %d 字节" % (
+        RATE, CHANNELS, "立体声" if CHANNELS == 2 else "单声道", FRAME_SIZE))
     print("恢复参数: 音量=%d%%, 喇叭=%s, 增益=%.1fx, 模式=%s" % (
         int(S.play_volume * 100),
         "开" if S.speaker_enabled else "关",
         S.mic_gain, S.play_mode))
 
-    # 启动时应用恢复的音量到 amixer
     v = int(S.play_volume * 100) if S.speaker_enabled else 0
     try:
         subprocess.run(["amixer", "set", "Speaker", "%d%%" % v],
@@ -1419,7 +1428,7 @@ def main():
 
     mumble = pymumble_py3.Mumble(
         SERVER, NICK, port=PORT, password=PASSWORD,
-        stereo=False,
+        stereo=False,                 # ← 单声道
     )
     mumble.callbacks.set_callback(PTX, on_text_received)
     mumble.callbacks.set_callback(PSND, on_sound_received)
@@ -1442,8 +1451,8 @@ def main():
 
     mumble.set_receive_sound(True)
 
-    time.sleep(2)
-    print("[check] 初始状态: %s" % get_encoder_info())
+    # 等待 encoder 创建（最多 30 秒）
+    wait_for_encoder(ENCODER_WAIT_MAX)
 
     ensure_unmuted()
 
@@ -1469,25 +1478,21 @@ def main():
     init_ptt()
     set_auto_ptt(True)
 
-    print("Radio Bot 已连接 %s:%d (单声道/音乐模式)" % (SERVER, PORT))
+    print("Radio Bot 已连接 %s:%d (%s模式)" % (
+        SERVER, PORT, "立体声" if CHANNELS == 2 else "单声道"))
 
-    # 启动位置保存线程
     threading.Thread(target=position_saver_thread, daemon=True).start()
-
     threading.Thread(target=player_thread, daemon=True).start()
 
     time.sleep(1)
 
-    # ===== 恢复上次播放 =====
     if S.mode == "radio" and S.current_station in STATIONS:
         print("恢复电台: %s %s" % (S.current_station, STATIONS[S.current_station]["name"]))
         start_station(S.current_station)
     elif S.mode == "music" and S.music_list:
-        # 优先用记录的歌曲路径
         restore_path = None
         if S.current_song_path and os.path.exists(S.current_song_path):
             restore_path = S.current_song_path
-            # 找到在列表里的索引
             try:
                 S.music_index = S.music_list.index(restore_path)
             except ValueError:
@@ -1507,7 +1512,6 @@ def main():
             time.sleep(1)
     except KeyboardInterrupt:
         print("退出中...")
-        # 退出前保存
         save_state(verbose=True)
         stop_all(save_pos=False)
         stop_mic()
