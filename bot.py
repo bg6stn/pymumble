@@ -405,7 +405,7 @@ def on_text_received(message):
         stop_mic()
         reply = "已停止"
 
-    elif cmd in ("dj", "jt"):
+    elif cmd in ("dj",):
         if listening:
             stop_mic()
             reply = "退出对讲，恢复播放"
