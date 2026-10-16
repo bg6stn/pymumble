@@ -590,10 +590,13 @@ def on_text_received(message):
         speaker_enabled = False
         if speaker_proc:
             try:
-                speaker_proc.stdin.close()
                 speaker_proc.terminate()
+                speaker_proc.wait(timeout=2)
             except Exception:
-                pass
+                try:
+                    speaker_proc.kill()
+                except Exception:
+                    pass
             speaker_proc = None
         reply = "本地喇叭已关闭"
 
