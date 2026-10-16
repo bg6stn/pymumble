@@ -54,7 +54,7 @@ playing = False
 
 
 def scan_music():
-    global music_list
+    global music_list, music_index
     exts = ("*.mp3", "*.wav", "*.ogg", "*.flac", "*.m4a")
     files = []
     for e in exts:
@@ -72,9 +72,12 @@ def ffmpeg_reader(url):
         "-f", "s16le", "-acodec", "pcm_s16le",
         "-ar", str(RATE), "-ac", str(CHANNELS), "-"
     ]
-    current_proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=CHUNK_SIZE)
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=CHUNK_SIZE)
+    current_proc = proc
     while True:
-        data = current_proc.stdout.read(CHUNK_SIZE)
+        if proc.poll() is not None:
+            break
+        data = proc.stdout.read(CHUNK_SIZE)
         if not data:
             break
         try:
@@ -119,7 +122,7 @@ def stop_all():
 
 
 def start_station(mumble, sid):
-    global current_station, mode
+    global current_station, mode, playing
     stop_all()
     current_station = sid
     mode = "radio"
@@ -129,7 +132,7 @@ def start_station(mumble, sid):
 
 
 def play_next_song(mumble):
-    global music_index
+    global music_index, mode, playing
     if not music_list:
         return "播放列表为空，用 /scan 扫描音乐目录"
 
@@ -168,6 +171,7 @@ def parse_cmd(text):
 
 
 def on_text_received(message):
+    global play_mode, music_index
     text = message.message.strip()
     sender = message.actor
     user = mumble.users[sender]["name"] if sender in mumble.users else "未知"
