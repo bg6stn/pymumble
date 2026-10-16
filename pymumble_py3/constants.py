@@ -3,7 +3,7 @@
 import platform
 import sys
 
-PYMUMBLE_VERSION = "1.7"
+PYMUMBLE_VERSION = "1.7.1-bg6stn"
 
 # ============================================================================
 # Tunable parameters
