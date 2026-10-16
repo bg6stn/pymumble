@@ -355,14 +355,20 @@ def parse_cmd(text):
 
 
 def on_sound_received(user, sound):
-    """监听模式下，把频道其他人的声音直接转发（双工）"""
+    """监听模式下，把频道其他人的声音转发（双工）"""
     if not listening:
         return
     try:
-        name = user["name"] if isinstance(user, dict) else str(user)
         pcm = sound.pcm
-        print("[接收] %s, pcm=%d bytes" % (name, len(pcm) if pcm else 0))
         if pcm:
+            # 收到的是单声道数据，上混成立体声（左右相同）
+            if CHANNELS == 2 and len(pcm) % 2 == 0:
+                import struct
+                samples = struct.unpack("<%dh" % (len(pcm) // 2), pcm)
+                stereo = []
+                for s in samples:
+                    stereo.extend([s, s])
+                pcm = struct.pack("<%dh" % len(stereo), *stereo)
             mumble.sound_output.add_sound(pcm)
     except Exception as e:
         print("on_sound_received error: %s" % e)
