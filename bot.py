@@ -108,7 +108,7 @@ music_list = []
 music_index = 0
 current_proc = None
 mic_proc = None
-audio_queue = queue.Queue(maxsize=50)
+audio_queue = queue.Queue(maxsize=100)
 playing = False
 listening = False
 
@@ -202,7 +202,7 @@ def mic_listener(mumble):
         "ffmpeg", "-loglevel", "error",
         "-f", "s16le", "-ar", str(RATE), "-ac", str(CHANNELS),
         "-i", "pipe:0",
-        "-af", "volume=5.0",
+        "-af", "volume=3.0",
         "-f", "s16le", "-acodec", "pcm_s16le",
         "-"
     ]
