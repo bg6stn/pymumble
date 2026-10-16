@@ -197,7 +197,7 @@ def mic_listener(mumble):
         "-D", MIC_DEVICE,
         "-f", "S16_LE",
         "-r", str(RATE),
-        "-c", str(CHANNELS),
+        "-c", "1",
         "-t", "raw",
         "--period-size=1024",
         "--buffer-size=4096",
@@ -206,13 +206,13 @@ def mic_listener(mumble):
     ]
     gain = [
         "ffmpeg", "-loglevel", "error",
-        "-f", "s16le", "-ar", str(RATE), "-ac", str(CHANNELS),
+        "-f", "s16le", "-ar", str(RATE), "-ac", "1",
         "-i", "pipe:0",
-        "-af", "volume=%.1f" % mic_gain,
-        "-f", "s16le", "-acodec", "pcm_s16le",
+        "-af", "volume=%.1f,pan=stereo|c0=c0|c1=c0" % mic_gain,
+        "-f", "s16le", "-acodec", "pcm_s16le", "-ac", "2",
         "-"
     ]
-    print("mic_listener: 启动录制 %s (gain=%.1fx)" % (MIC_DEVICE, mic_gain))
+    print("mic_listener: 启动录制 %s (单声道, gain=%.1fx)" % (MIC_DEVICE, mic_gain))
     p1 = subprocess.Popen(rec, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=CHUNK_SIZE)
     p2 = subprocess.Popen(gain, stdin=p1.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=CHUNK_SIZE)
     p1.stdout.close()
