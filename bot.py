@@ -91,7 +91,7 @@ def ffmpeg_reader(url):
 
 
 def player(mumble):
-    time.sleep(0.5)
+    time.sleep(1)
     while True:
         if playing:
             try:
