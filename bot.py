@@ -161,10 +161,12 @@ def scan_music():
 
 
 def ffmpeg_reader(url):
-    global current_proc
+    global current_proc, play_volume
+    af = "volume=%.2f" % play_volume if play_volume != 1.0 else "volume=1.0"
     cmd = [
         "ffmpeg", "-loglevel", "error",
         "-i", url,
+        "-af", af,
         "-f", "s16le", "-acodec", "pcm_s16le",
         "-ar", str(RATE), "-ac", str(CHANNELS), "-"
     ]
@@ -248,23 +250,12 @@ def stop_mic():
         mic_proc = None
 
 
-def apply_volume(data, vol):
-    """对16bit PCM数据做音量调整"""
-    if vol == 1.0:
-        return data
-    import struct
-    samples = struct.unpack("<%dh" % (len(data) // 2), data)
-    adjusted = [max(-32768, min(32767, int(s * vol))) for s in samples]
-    return struct.pack("<%dh" % len(adjusted), *adjusted)
-
-
 def player(mumble):
     time.sleep(1.0)
     while True:
         if playing or listening:
             try:
                 data = audio_queue.get(timeout=1)
-                data = apply_volume(data, play_volume)
                 mumble.sound_output.add_sound(data)
                 time.sleep(CHUNK_MS / 1000.0)
             except queue.Empty:
@@ -405,25 +396,31 @@ def on_text_received(message):
 
     elif cmd == "mic":
         global mic_gain
-        if len(parts) < 2 or parts[1] not in ("+", "-"):
-            reply = "话筒增益: %.1fx  (/mic + 增加, /mic - 减少)" % mic_gain
+        if len(parts) < 2:
+            mic_gain = 3.0
+            reply = "话筒增益恢复默认: %.1fx" % mic_gain
         elif parts[1] == "+":
             mic_gain = min(10.0, mic_gain + 0.5)
             reply = "话筒增益: %.1fx" % mic_gain
-        else:
+        elif parts[1] == "-":
             mic_gain = max(0.5, mic_gain - 0.5)
             reply = "话筒增益: %.1fx" % mic_gain
+        else:
+            reply = "话筒增益: %.1fx  (/mic + /mic -)" % mic_gain
 
     elif cmd == "vol":
         global play_volume
-        if len(parts) < 2 or parts[1] not in ("+", "-"):
-            reply = "播放音量: %.1fx  (/vol + 增加, /vol - 减少)" % play_volume
+        if len(parts) < 2:
+            play_volume = 1.0
+            reply = "播放音量恢复默认: %.1fx" % play_volume
         elif parts[1] == "+":
             play_volume = min(5.0, play_volume + 0.5)
             reply = "播放音量: %.1fx" % play_volume
-        else:
+        elif parts[1] == "-":
             play_volume = max(0.5, play_volume - 0.5)
             reply = "播放音量: %.1fx" % play_volume
+        else:
+            reply = "播放音量: %.1fx  (/vol + /vol -)" % play_volume
 
     elif cmd in ("local", "lo"):
         reply = start_music(mumble)
