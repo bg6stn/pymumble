@@ -293,6 +293,7 @@ def stop_all():
 
 def start_station(mumble, sid):
     global current_station, mode, playing
+    stop_mic()
     stop_all()
     current_station = sid
     mode = "radio"
@@ -310,6 +311,7 @@ def start_station(mumble, sid):
 
 def play_next_song(mumble):
     global music_index, mode, playing
+    stop_mic()
     if not music_list:
         return "播放列表为空，用 /s 扫描音乐目录"
 
