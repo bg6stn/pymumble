@@ -239,7 +239,7 @@ def parse_cmd(text):
 
 
 def on_text_received(message):
-    global play_mode, music_index
+    global play_mode, music_index, STATIONS
     text = message.message.strip()
     sender = message.actor
     user = mumble.users[sender]["name"] if sender in mumble.users else "未知"
@@ -376,7 +376,6 @@ def on_text_received(message):
             reply = "已删除电台: %s" % name
 
     elif cmd in ("reset", "rs"):
-        global STATIONS
         stop_all()
         STATIONS = dict(DEFAULT_STATIONS)
         save_stations()
