@@ -620,8 +620,7 @@ def on_text_received(message):
         play_volume = 0.0
         if speaker_proc:
             try:
-                import os, signal
-                os.killpg(os.getpgid(speaker_proc.pid), signal.SIGKILL)
+                speaker_proc.terminate()
             except Exception:
                 pass
             speaker_proc = None
