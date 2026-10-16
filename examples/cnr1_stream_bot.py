@@ -276,7 +276,7 @@ def on_text_received(message):
         return
 
     try:
-        mumble.users[sender].send_text_message(reply)
+        mumble.users[sender].send_text_message(reply.replace("\n", "<br/>"))
     except Exception:
         pass
     print("[%s] %s -> %s" % (user, text, reply.replace("\n", " | ")))
