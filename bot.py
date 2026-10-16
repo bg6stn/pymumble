@@ -43,7 +43,7 @@ PTT_HANGTIME = 0.2
 SPEAKER_DEVICE = "plughw:0,0"
 MIC_DEVICE     = "plughw:0,0"
 
-# ===== 音频（单声道，兼容性最好）=====
+# ===== 音频（单声道）=====
 RATE       = 48000
 CHANNELS   = 1
 FRAME_MS   = 20
@@ -68,8 +68,11 @@ DEFAULT_PLAY_MODE = "seq"
 
 POSITION_SAVE_INTERVAL = 5
 
-# encoder 等待时间（秒）
-ENCODER_WAIT_MAX = 30
+# 连接参数
+CONNECT_MAX_RETRIES = 60        # 最多重试 60 次
+CONNECT_RETRY_DELAY = 10        # 每次间隔 10 秒
+HANDSHAKE_WAIT      = 15        # is_ready 后再等握手秒数
+ENCODER_WAIT_MAX    = 30        # encoder 最多等 30 秒
 
 BASE_DIR      = os.path.dirname(os.path.abspath(__file__))
 STATIONS_FILE = os.path.join(BASE_DIR, "stations.json")
@@ -216,7 +219,6 @@ _auto_advance_pending = False
 _position_lock = threading.Lock()
 _current_reader_frames = 0
 
-# encoder 是否就绪
 _encoder_ready = False
 
 
@@ -520,26 +522,42 @@ def get_encoder_info():
     )
 
 
+def wait_for_handshake(max_wait=HANDSHAKE_WAIT):
+    """等 myself 有效（握手完成）"""
+    print("[check] 等待服务器握手（最多 %d 秒）..." % max_wait)
+    for i in range(max_wait):
+        try:
+            me = mumble.users.myself
+            if me is not None:
+                print("[check] 握手完成 (%ds), 用户数=%d" % (i, len(mumble.users)))
+                return True
+        except Exception:
+            pass
+        time.sleep(1)
+        if (i + 1) % 5 == 0:
+            myself_ok = "OK" if (mumble.users and mumble.users.myself) else "None"
+            print("[check] 握手等待中 %ds... myself=%s" % (i + 1, myself_ok))
+    print("[check] 警告: %d 秒后握手未完成" % max_wait)
+    return False
+
+
 def wait_for_encoder(max_wait=ENCODER_WAIT_MAX):
-    """等待 encoder 创建，返回是否成功"""
+    """等 encoder 创建"""
     global _encoder_ready
     print("[check] 等待 encoder 创建（最多 %d 秒）..." % max_wait)
-    waited = 0
-    while waited < max_wait:
+    for i in range(max_wait):
         enc = getattr(mumble.sound_output, "encoder", None)
         if enc is not None:
             _encoder_ready = True
-            print("[check] encoder 已创建 (%ds): %s" % (waited, get_encoder_info()))
+            print("[check] encoder 已创建 (%ds): %s" % (i, get_encoder_info()))
             return True
         time.sleep(1)
-        waited += 1
-        if waited % 5 == 0:
-            print("[check] 等待中 %ds... codec=%s" % (
-                waited, getattr(mumble.sound_output, "codec", None)))
+        if (i + 1) % 5 == 0:
+            print("[check] encoder 等待中 %ds... codec=%s" % (
+                i + 1, getattr(mumble.sound_output, "codec", None)))
 
     _encoder_ready = False
-    print("[check] 警告: %d 秒后 encoder 仍未创建，音频发送将失败" % max_wait)
-    print("[check] codec=%s" % getattr(mumble.sound_output, "codec", None))
+    print("[check] 警告: %d 秒后 encoder 仍未创建" % max_wait)
     return False
 
 
@@ -549,6 +567,9 @@ def ensure_unmuted():
         return
     try:
         me = mumble.users.myself
+        if me is None:
+            print("[me] myself 未就绪，跳过")
+            return
         sm = me.get("self_mute")
         sd = me.get("self_deaf")
         print("[me] self_mute=%s self_deaf=%s" % (sm, sd))
@@ -570,11 +591,10 @@ def ensure_unmuted():
 
 # ==================== 音频发送核心 ====================
 def feed_mumble(data):
-    """喂 PCM 到 Mumble。带 encoder 熔断保护"""
     global _feed_count, _feed_err_count
     if mumble is None:
         return False
-    # encoder 未就绪直接返回，不堆错误
+    # encoder 未就绪直接返回
     try:
         if getattr(mumble.sound_output, "encoder", None) is None:
             return False
@@ -605,7 +625,6 @@ def on_song_finished(my_session, path):
         _auto_advance_pending = True
 
     try:
-        # encoder 不可用时不做自动切换，避免死循环
         if mumble is None or getattr(mumble.sound_output, "encoder", None) is None:
             print("[auto] encoder 不可用，取消自动切换（避免死循环）")
             return
@@ -1029,7 +1048,8 @@ def build_status():
     lines.append("当前模式: %s" % mode_map.get(S.mode, S.mode))
     lines.append("正在播放: %s" % ("是" if S.playing else "否"))
     lines.append("对讲模式: %s" % ("是" if S.listening else "否"))
-    lines.append("音频声道: %d (%s)" % (CHANNELS, "立体声" if CHANNELS == 2 else "单声道"))
+    lines.append("音频声道: %d (%s)" % (
+        CHANNELS, "立体声" if CHANNELS == 2 else "单声道"))
 
     if S.mode == "radio":
         st = STATIONS.get(S.current_station, {})
@@ -1426,15 +1446,48 @@ def main():
     except Exception:
         pass
 
-    mumble = pymumble_py3.Mumble(
-        SERVER, NICK, port=PORT, password=PASSWORD,
-        stereo=False,                 # ← 单声道
-    )
-    mumble.callbacks.set_callback(PTX, on_text_received)
-    mumble.callbacks.set_callback(PSND, on_sound_received)
-    mumble.start()
-    mumble.is_ready()
+    # ===== 连接重试 =====
+    mumble = None
+    for attempt in range(CONNECT_MAX_RETRIES):
+        try:
+            print("[mumble] 第 %d 次连接 %s:%d..." % (attempt + 1, SERVER, PORT))
+            m = pymumble_py3.Mumble(
+                SERVER, NICK, port=PORT, password=PASSWORD,
+                stereo=False,
+            )
+            m.callbacks.set_callback(PTX, on_text_received)
+            m.callbacks.set_callback(PSND, on_sound_received)
+            m.start()
+            m.is_ready()
+            # is_ready 后额外等，让服务器发完握手消息
+            time.sleep(3)
 
+            # 检查 myself 是否有效
+            try:
+                me = m.users.myself
+                if me is not None:
+                    print("[mumble] 连接成功（第 %d 次）" % (attempt + 1))
+                    mumble = m
+                    break
+                else:
+                    print("[mumble] 握手未完成（myself=None），关闭重试")
+            except Exception as e:
+                print("[mumble] 检查 myself 失败: %s" % e)
+
+            try:
+                m.stop()
+            except Exception:
+                pass
+            time.sleep(CONNECT_RETRY_DELAY)
+        except Exception as e:
+            print("[mumble] 第 %d 次连接异常: %s" % (attempt + 1, e))
+            time.sleep(CONNECT_RETRY_DELAY)
+
+    if mumble is None:
+        print("[mumble] 重试 %d 次仍失败，退出" % CONNECT_MAX_RETRIES)
+        return
+
+    # ===== 后续配置 =====
     if USE_CODEC_PROFILE:
         try:
             mumble.set_codec_profile("audio")
@@ -1451,7 +1504,8 @@ def main():
 
     mumble.set_receive_sound(True)
 
-    # 等待 encoder 创建（最多 30 秒）
+    # ===== 等握手 + encoder =====
+    wait_for_handshake(HANDSHAKE_WAIT)
     wait_for_encoder(ENCODER_WAIT_MAX)
 
     ensure_unmuted()
