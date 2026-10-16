@@ -770,6 +770,18 @@ if __name__ == "__main__":
         if getattr(u, "sound", None) is None:
             u.sound = soundqueue.SoundQueue(mumble)
 
+    # 定时检查新用户sound对象
+    def fix_users():
+        while True:
+            for uid, u in mumble.users.items():
+                if getattr(u, "sound", None) is None:
+                    try:
+                        u.sound = soundqueue.SoundQueue(mumble)
+                    except Exception:
+                        pass
+            time.sleep(0.5)
+    threading.Thread(target=fix_users, daemon=True).start()
+
     print("Radio Bot 已连接 %s:%d (立体声/音乐模式/192kbps)" % (SERVER, PORT))
     print("命令: /p /t /p1 /lo /n /r /se /re /s /rm /c /add /del /ls /h")
 
