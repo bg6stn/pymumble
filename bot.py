@@ -24,6 +24,7 @@ PASSWORD = ""
 NICK = "Radio-Bot"
 MUSIC_DIR = "/root/music"
 MIC_DEVICE = "plughw:0,0"
+SPEAKER_DEVICE = "plughw:0,0"
 STATIONS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stations.json")
 STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "state.json")
 
@@ -108,6 +109,7 @@ music_list = []
 music_index = 0
 current_proc = None
 mic_proc = None
+speaker_proc = None
 audio_queue = queue.Queue(maxsize=1000)
 monitor_queue = queue.Queue(maxsize=500)
 playing = False
@@ -246,23 +248,15 @@ def mic_listener(mumble):
         data = p2.stdout.read(get_chunk_size())
         if not data:
             break
-        try:
-            monitor_queue.put_nowait(data)
-        except queue.Full:
-            monitor_queue.get_nowait()
-            monitor_queue.put_nowait(data)
-        # 发送mic数据 + 频道收到的声音
-        while not monitor_queue.empty():
-            chunk = monitor_queue.get_nowait()
-            mumble.sound_output.add_sound(chunk)
-            time.sleep(chunk_ms / 1000.0)
+        mumble.sound_output.add_sound(data)
+        time.sleep(chunk_ms / 1000.0)
         cnt += 1
         if cnt % 100 == 0:
             print("[mic] 已发送 %d chunks" % cnt)
 
 
 def stop_mic():
-    global mic_proc, listening
+    global mic_proc, speaker_proc, listening
     listening = False
     if mic_proc:
         try:
@@ -270,6 +264,13 @@ def stop_mic():
         except Exception:
             pass
         mic_proc = None
+    if speaker_proc:
+        try:
+            speaker_proc.stdin.close()
+            speaker_proc.terminate()
+        except Exception:
+            pass
+        speaker_proc = None
 
 
 def player(mumble):
@@ -364,26 +365,15 @@ def parse_cmd(text):
 
 
 def on_sound_received(user, sound):
-    """监听模式下，把频道其他人的声音放入监听队列"""
-    if not listening:
+    """监听模式下，频道其他人的声音从本地声卡播放（不回传Mumble）"""
+    if not listening or not speaker_proc:
         return
     try:
         pcm = sound.pcm
         if pcm:
-            if CHANNELS == 2 and len(pcm) % 2 == 0:
-                import struct
-                samples = struct.unpack("<%dh" % (len(pcm) // 2), pcm)
-                stereo = []
-                for s in samples:
-                    stereo.extend([s, s])
-                pcm = struct.pack("<%dh" % len(stereo), *stereo)
-            try:
-                monitor_queue.put_nowait(pcm)
-            except queue.Full:
-                monitor_queue.get_nowait()
-                monitor_queue.put_nowait(pcm)
-    except Exception as e:
-        print("on_sound_received error: %s" % e)
+            speaker_proc.stdin.write(pcm)
+    except Exception:
+        pass
 
 
 def on_text_received(message):
@@ -424,6 +414,13 @@ def on_text_received(message):
             stop_all()
             stop_mic()
             listening = True
+            # 启动本地声卡播放进程（频道声音从此输出）
+            global speaker_proc
+            speaker_proc = subprocess.Popen(
+                ["aplay", "-D", SPEAKER_DEVICE, "-f", "S16_LE",
+                 "-r", str(RATE), "-c", "1", "-q"],
+                stdin=subprocess.PIPE
+            )
             threading.Thread(target=mic_listener, args=(mumble,), daemon=True).start()
             reply = "话筒监听中 (%s)，再发 /jt 退出" % MIC_DEVICE
 
