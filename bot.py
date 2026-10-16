@@ -415,8 +415,13 @@ def parse_cmd(text):
     if not t.startswith("/"):
         return None
     t = t[1:].strip()
+    # 支持p1无空格
     if t.startswith("p") and len(t) >= 2 and t[1:].isdigit():
         return ["p", t[1:]]
+    # 支持命令+数字无空格，如vol10、mic3
+    for cmd in ["vol", "mic", "bw", "q", "ck", "rm"]:
+        if t.startswith(cmd) and len(t) > len(cmd) and t[len(cmd):].isdigit():
+            return [cmd, t[len(cmd):]]
     return t.split()
 
 
