@@ -414,15 +414,14 @@ def on_text_received(message):
             stop_all()
             stop_mic()
             listening = True
-            # 启动本地声卡播放进程（频道声音从此输出）
+            # 启动本地声卡播放进程（频道声音从此输出，不录mic）
             global speaker_proc
             speaker_proc = subprocess.Popen(
                 ["aplay", "-D", SPEAKER_DEVICE, "-f", "S16_LE",
                  "-r", str(RATE), "-c", "1", "-q"],
                 stdin=subprocess.PIPE
             )
-            threading.Thread(target=mic_listener, args=(mumble,), daemon=True).start()
-            reply = "话筒监听中 (%s)，再发 /jt 退出" % MIC_DEVICE
+            reply = "监听中：频道声音从本地播放，再发 /jt 退出"
 
     elif cmd == "mic":
         global mic_gain
