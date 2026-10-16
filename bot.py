@@ -125,7 +125,7 @@ speaker_enabled = True
 mic_gain = 3.0
 play_volume = 1.0
 bandwidth_kbps = 128
-chunk_ms = 10
+chunk_ms = 50
 queue_size = 300
 
 
@@ -581,7 +581,7 @@ def on_text_received(message):
     elif cmd == "ck":
         global chunk_ms
         if len(parts) < 2:
-            chunk_ms = 10
+            chunk_ms = 50
             reply = "块大小恢复默认: %dms" % chunk_ms
         elif parts[1] == "+":
             chunk_ms = min(80, chunk_ms + 5)
