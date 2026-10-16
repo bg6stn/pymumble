@@ -485,7 +485,7 @@ def on_text_received(message):
     elif cmd == "bw":
         global bandwidth_kbps
         if len(parts) < 2:
-            bandwidth_kbps = 192
+            bandwidth_kbps = 128
             reply = "带宽恢复默认: %dkbps" % bandwidth_kbps
         elif parts[1] == "+":
             bandwidth_kbps = min(512, bandwidth_kbps + 16)
@@ -501,7 +501,7 @@ def on_text_received(message):
     elif cmd == "q":
         global queue_size
         if len(parts) < 2:
-            queue_size = 1000
+            queue_size = 300
             rebuild_queue()
             reply = "队列恢复默认: %d" % queue_size
         elif parts[1] == "+":
@@ -518,7 +518,7 @@ def on_text_received(message):
     elif cmd == "ck":
         global chunk_ms
         if len(parts) < 2:
-            chunk_ms = 20
+            chunk_ms = 10
             reply = "块大小恢复默认: %dms" % chunk_ms
         elif parts[1] == "+":
             chunk_ms = min(100, chunk_ms + 5)
