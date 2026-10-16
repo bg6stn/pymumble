@@ -110,18 +110,20 @@ music_index = 0
 current_proc = None
 mic_proc = None
 speaker_proc = None
-audio_queue = queue.Queue(maxsize=1000)
+audio_queue = queue.Queue(maxsize=300)
 playing = False
 listening = False
 channel_active = False
 channel_timer = None
+mic_active = False
+mic_timer = None
 
 # 可调音频参数（默认值）
 mic_gain = 3.0
 play_volume = 1.0
-bandwidth_kbps = 192
-chunk_ms = 20
-queue_size = 1000
+bandwidth_kbps = 128
+chunk_ms = 10
+queue_size = 300
 
 
 def get_chunk_size():
@@ -240,7 +242,7 @@ def mic_listener(mumble):
         print("mic_listener: 启动失败: %s" % err[:500])
         return
     print("mic_listener: 录制中")
-    cnt = 0
+    import struct as _st
     while True:
         if p2.poll() is not None:
             err = p2.stderr.read().decode("utf-8", errors="replace")
@@ -249,12 +251,20 @@ def mic_listener(mumble):
         data = p2.stdout.read(get_chunk_size())
         if not data:
             break
+        # 能量检测mic是否有人说话
+        samples = _st.unpack("<%dh" % (len(data) // 2), data)
+        energy = sum(abs(s) for s in samples) / len(samples)
+        global mic_active, mic_timer
+        if energy > 800:
+            mic_active = True
+            if mic_timer:
+                mic_timer.cancel()
+            mic_timer = threading.Timer(0.5, set_mic_inactive)
+            mic_timer.start()
+        # 频道有人说话时不发mic
         if not channel_active:
             mumble.sound_output.add_sound(data)
         time.sleep(chunk_ms / 1000.0)
-        cnt += 1
-        if cnt % 100 == 0:
-            print("[mic] 已发送 %d chunks" % cnt)
 
 
 def stop_mic():
@@ -367,14 +377,15 @@ def parse_cmd(text):
 
 
 def on_sound_received(user, sound):
-    """对讲模式：频道声音→本地喇叭，VAD暂停mic防回声"""
+    """对讲模式：频道声音→喇叭（mic说话时暂停喇叭）"""
     global channel_active, channel_timer
     if not listening or not speaker_proc:
         return
     try:
         pcm = sound.pcm
         if pcm:
-            speaker_proc.stdin.write(pcm)
+            if not mic_active:
+                speaker_proc.stdin.write(pcm)
             channel_active = True
             if channel_timer:
                 channel_timer.cancel()
@@ -387,7 +398,11 @@ def on_sound_received(user, sound):
 def set_channel_inactive():
     global channel_active
     channel_active = False
-    print("[VAD] 频道安静，恢复mic")
+
+
+def set_mic_inactive():
+    global mic_active
+    mic_active = False
 
 
 def on_text_received(message):
