@@ -186,18 +186,29 @@ def ffmpeg_reader(url):
 def mic_listener(mumble):
     """从声卡录制mic，直接播放到Mumble频道"""
     global mic_proc
+    time.sleep(1)
     cmd = [
-        "ffmpeg", "-loglevel", "error",
+        "ffmpeg", "-loglevel", "warning",
         "-f", "alsa",
         "-ac", str(CHANNELS),
         "-ar", str(RATE),
         "-i", MIC_DEVICE,
         "-f", "s16le", "-acodec", "pcm_s16le", "-"
     ]
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=CHUNK_SIZE)
+    print("mic_listener: 启动录制 %s" % MIC_DEVICE)
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=CHUNK_SIZE)
     mic_proc = proc
+    # 等一下看进程是否立即退出
+    time.sleep(0.5)
+    if proc.poll() is not None:
+        err = proc.stderr.read().decode("utf-8", errors="replace")
+        print("mic_listener: ffmpeg启动失败: %s" % err[:500])
+        return
+    print("mic_listener: 录制中")
     while True:
         if proc.poll() is not None:
+            err = proc.stderr.read().decode("utf-8", errors="replace")
+            print("mic_listener: 进程退出: %s" % err[:300])
             break
         data = proc.stdout.read(CHUNK_SIZE)
         if not data:
