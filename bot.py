@@ -354,7 +354,7 @@ def parse_cmd(text):
     return t.split()
 
 
-def on_sound_received(mumble, user, sound):
+def on_sound_received(user, sound):
     """监听模式下，把频道其他人的声音直接转发（双工）"""
     if not listening:
         return
