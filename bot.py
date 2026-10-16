@@ -197,10 +197,12 @@ def strip_html(s):
 
 def scan_music():
     global music_list, music_index
-    exts = ("*.mp3", "*.wav", "*.ogg", "*.flac", "*.m4a")
+    exts = (".mp3", ".wav", ".ogg", ".flac", ".m4a", ".wma", ".aac", ".opus")
     files = []
-    for e in exts:
-        files.extend(glob.glob(os.path.join(MUSIC_DIR, "**", e), recursive=True))
+    for root, dirs, fs in os.walk(MUSIC_DIR):
+        for f in fs:
+            if f.lower().endswith(exts):
+                files.append(os.path.join(root, f))
     music_list = sorted(files)
     music_index = 0
     return music_list
