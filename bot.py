@@ -325,7 +325,7 @@ def player(mumble):
                             "ffmpeg -loglevel error -f s16le -ar %d -ac 2 -i pipe:0 "
                             "-af volume=%.2f -f s16le - | "
                             "aplay -D %s -f S16_LE -r %d -c 2 -q" % (RATE, play_volume, SPEAKER_DEVICE, RATE),
-                            stdin=subprocess.PIPE, shell=True
+                            stdin=subprocess.PIPE, shell=True, start_new_session=True
                         )
                     try:
                         speaker_proc.stdin.write(data)
@@ -590,11 +590,12 @@ def on_text_received(message):
         speaker_enabled = False
         if speaker_proc:
             try:
-                speaker_proc.terminate()
+                import os, signal
+                os.killpg(os.getpgid(speaker_proc.pid), signal.SIGTERM)
                 speaker_proc.wait(timeout=2)
             except Exception:
                 try:
-                    speaker_proc.kill()
+                    os.killpg(os.getpgid(speaker_proc.pid), signal.SIGKILL)
                 except Exception:
                     pass
             speaker_proc = None
