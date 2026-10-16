@@ -236,6 +236,7 @@ def mic_listener(mumble):
         print("mic_listener: 启动失败: %s" % err[:500])
         return
     print("mic_listener: 录制中")
+    cnt = 0
     while True:
         if p2.poll() is not None:
             err = p2.stderr.read().decode("utf-8", errors="replace")
@@ -246,6 +247,9 @@ def mic_listener(mumble):
             break
         mumble.sound_output.add_sound(data)
         time.sleep(chunk_ms / 1000.0)
+        cnt += 1
+        if cnt % 100 == 0:
+            print("[mic] 已发送 %d chunks" % cnt)
 
 
 def stop_mic():
@@ -355,7 +359,9 @@ def on_sound_received(mumble, user, sound):
     if not listening:
         return
     try:
+        name = user["name"] if isinstance(user, dict) else str(user)
         pcm = sound.pcm
+        print("[接收] %s, pcm=%d bytes" % (name, len(pcm) if pcm else 0))
         if pcm:
             mumble.sound_output.add_sound(pcm)
     except Exception as e:
