@@ -256,6 +256,27 @@ def on_text_received(message):
                 lines.append("  %s%d. %s" % (mark, i + 1, os.path.basename(f)))
         reply = "\n".join(lines)
 
+    elif cmd in ("add", "a"):
+        # /add 名称 url
+        if len(parts) < 3:
+            reply = "用法: /add 名称 链接"
+        else:
+            name = parts[1]
+            url = parts[2]
+            new_id = str(len(STATIONS) + 1)
+            STATIONS[new_id] = {"name": name, "url": url}
+            reply = "已添加电台: /p%s %s" % (new_id, name)
+
+    elif cmd in ("del", "d"):
+        # /del 1
+        if len(parts) < 2 or parts[1] not in STATIONS:
+            reply = "用法: /del 1  (删除指定电台)"
+        else:
+            sid = parts[1]
+            name = STATIONS[sid]["name"]
+            del STATIONS[sid]
+            reply = "已删除电台: %s" % name
+
     elif cmd in ("help", "h"):
         reply = (
             "=== 命令 (都以/开头) ===\n"
@@ -270,6 +291,8 @@ def on_text_received(message):
             "/s /scan      重新扫描音乐目录\n"
             "/rm 3         删除列表第3首(不删文件)\n"
             "/c /clear     清空播放列表\n"
+            "/add 名称 url 添加电台\n"
+            "/del 1        删除电台\n"
             "/ls /list     查看电台和歌曲\n"
             "/h /help      本帮助"
         )
@@ -280,7 +303,9 @@ def on_text_received(message):
         mumble.users[sender].send_text_message(reply.replace("\n", "<br/>"))
     except Exception:
         pass
-    print("[%s] %s -> %s" % (user, text, reply.replace("\n", " | ")))
+    print("[%s] %s" % (user, text))
+    for line in reply.split("\n"):
+        print("    %s" % line)
 
 
 if __name__ == "__main__":
