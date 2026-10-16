@@ -115,8 +115,6 @@ playing = False
 listening = False
 channel_active = False
 channel_timer = None
-mic_active = False
-mic_timer = None
 
 # 可调音频参数（默认值）
 mic_gain = 3.0
@@ -242,7 +240,6 @@ def mic_listener(mumble):
         print("mic_listener: 启动失败: %s" % err[:500])
         return
     print("mic_listener: 录制中")
-    import struct as _st
     cnt = 0
     while True:
         if p2.poll() is not None:
@@ -252,22 +249,12 @@ def mic_listener(mumble):
         data = p2.stdout.read(get_chunk_size())
         if not data:
             break
-        # 简单能量检测判断mic是否有人说话
-        samples = _st.unpack("<%dh" % (len(data) // 2), data)
-        energy = sum(abs(s) for s in samples) / len(samples)
-        global mic_active, mic_timer
-        if energy > 800:  # 有声音
-            if not mic_active:
-                mic_active = True
-                if mic_timer:
-                    mic_timer.cancel()
-            mic_timer = threading.Timer(0.4, lambda: globals().update(mic_active=False))
-            mic_timer.start()
-        # 频道有人说话时不发mic
         if not channel_active:
             mumble.sound_output.add_sound(data)
         time.sleep(chunk_ms / 1000.0)
         cnt += 1
+        if cnt % 100 == 0:
+            print("[mic] 已发送 %d chunks" % cnt)
 
 
 def stop_mic():
@@ -380,16 +367,14 @@ def parse_cmd(text):
 
 
 def on_sound_received(user, sound):
-    """对讲模式：频道声音→喇叭（mic说话时暂停喇叭）"""
+    """对讲模式：频道声音→本地喇叭，VAD暂停mic防回声"""
     global channel_active, channel_timer
     if not listening or not speaker_proc:
         return
     try:
         pcm = sound.pcm
         if pcm:
-            # mic在说话时暂停喇叭播放
-            if not mic_active:
-                speaker_proc.stdin.write(pcm)
+            speaker_proc.stdin.write(pcm)
             channel_active = True
             if channel_timer:
                 channel_timer.cancel()
