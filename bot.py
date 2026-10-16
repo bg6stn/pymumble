@@ -28,7 +28,7 @@ STATIONS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "statio
 STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "state.json")
 
 RATE = 48000
-CHANNELS = 1
+CHANNELS = 2
 CHUNK_MS = 10
 CHUNK_SIZE = int(RATE * 2 * CHUNK_MS / 1000)
 
