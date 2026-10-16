@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
-# 播放机器人（流媒体 + 本地音乐）
+# 播放机器人（流媒体 + 本地音乐 + 播放列表管理）
 # 所有命令以 / 开头：
 #   /p            播放/继续
 #   /t            停止
-#   /p1 /p2       切换电台（/p1 和 /p 1 都识别）
+#   /p1 /p2       切换电台
 #   /local        开始播放本地音乐
-#   /rand         随机播放
-#   /seq          顺序播放
-#   /rep          单曲循环
 #   /next         下一首
+#   /rand /seq /rep  播放模式
+#   /scan         重新扫描音乐目录
+#   /rm 3         删除列表第3首（只删列表，不删文件）
+#   /clear        清空播放列表
 #   /list         查看电台/歌曲列表
-#   /help         查看帮助
+#   /help         帮助
 import pymumble_py3
 import subprocess
 import time
@@ -59,6 +60,7 @@ def scan_music():
     for e in exts:
         files.extend(glob.glob(os.path.join(MUSIC_DIR, e)))
     music_list = sorted(files)
+    music_index = 0
     return music_list
 
 
@@ -129,9 +131,7 @@ def start_station(mumble, sid):
 def play_next_song(mumble):
     global music_index
     if not music_list:
-        scan_music()
-    if not music_list:
-        return "本地音乐目录无歌曲"
+        return "播放列表为空，用 /scan 扫描音乐目录"
 
     if play_mode == "rep":
         pass
@@ -146,27 +146,24 @@ def play_next_song(mumble):
     mode = "music"
     playing = True
     threading.Thread(target=ffmpeg_reader, args=(song,), daemon=True).start()
-    return "播放: " + name
+    return "播放[%d/%d]: %s" % (music_index + 1, len(music_list), name)
 
 
 def start_music(mumble):
-    songs = scan_music()
-    if not songs:
+    if not music_list:
+        scan_music()
+    if not music_list:
         return "本地音乐目录无歌曲: " + MUSIC_DIR
     return play_next_song(mumble)
 
 
 def parse_cmd(text):
-    """解析命令，必须以/开头，支持/p1和/p 1"""
     t = text.strip()
     if not t.startswith("/"):
         return None
-    t = t[1:]  # 去掉开头的/
-
-    # 处理 /p1 /p2 这种连写
+    t = t[1:]
     if t.startswith("p") and len(t) >= 2 and t[1:].isdigit():
         return ["p", t[1:]]
-
     return t.split()
 
 
@@ -201,7 +198,7 @@ def on_text_received(message):
         if mode == "music":
             reply = play_next_song(mumble)
         else:
-            reply = "当前不在本地音乐模式"
+            reply = "当前不在本地音乐模式，发 /local 开始"
 
     elif cmd == "rand":
         play_mode = "rand"
@@ -215,16 +212,45 @@ def on_text_received(message):
         play_mode = "rep"
         reply = "单曲循环"
 
+    elif cmd == "scan":
+        n = len(music_list)
+        scan_music()
+        reply = "重新扫描完成: %d -> %d 首" % (n, len(music_list))
+
+    elif cmd == "rm":
+        # /rm 3 删除第3首
+        if len(parts) < 2 or not parts[1].isdigit():
+            reply = "用法: /rm 3  (删除列表第3首，不删文件)"
+        else:
+            idx = int(parts[1]) - 1
+            if 0 <= idx < len(music_list):
+                name = os.path.basename(music_list.pop(idx))
+                if music_index >= idx and music_index > 0:
+                    music_index -= 1
+                reply = "已删除第%d首: %s" % (idx + 1, name)
+            else:
+                reply = "序号超出范围，当前共%d首" % len(music_list)
+
+    elif cmd == "clear":
+        n = len(music_list)
+        music_list.clear()
+        stop_all()
+        reply = "已清空播放列表 (%d首)" % n
+
     elif cmd == "list":
         lines = ["=== 电台 ==="]
         for k, v in STATIONS.items():
             mark = " (当前)" if k == current_station and mode == "radio" else ""
             lines.append("  /p%s %s%s" % (k, v["name"], mark))
         lines.append("")
-        lines.append("=== 本地音乐 ===")
+        lines.append("=== 本地音乐 (%d首) ===" % len(music_list))
         lines.append("  目录: " + MUSIC_DIR)
-        lines.append("  歌曲数: %d" % len(music_list))
         lines.append("  模式: %s" % {"seq": "顺序", "rand": "随机", "rep": "单曲循环"}[play_mode])
+        lines.append("")
+        if music_list:
+            for i, f in enumerate(music_list):
+                mark = " ->" if i == music_index else "   "
+                lines.append("  %s%d. %s" % (mark, i + 1, os.path.basename(f)))
         reply = "\n".join(lines)
 
     elif cmd == "help":
@@ -235,9 +261,10 @@ def on_text_received(message):
             "/p1 /p2       切换电台\n"
             "/local        播放本地音乐\n"
             "/next         下一首\n"
-            "/rand         随机播放\n"
-            "/seq          顺序播放\n"
-            "/rep          单曲循环\n"
+            "/rand /seq /rep  随机/顺序/单曲\n"
+            "/scan         重新扫描音乐目录\n"
+            "/rm 3         删除列表第3首(不删文件)\n"
+            "/clear        清空播放列表\n"
             "/list         查看电台和歌曲\n"
             "/help         本帮助"
         )
@@ -261,7 +288,7 @@ if __name__ == "__main__":
     mumble.is_ready()
 
     print("Radio Bot 已连接 %s:%d" % (SERVER, PORT))
-    print("命令: /p=播放, /t=停止, /p1 /p2=电台, /local=本地, /rand /seq /rep=模式")
+    print("命令: /p /t /p1 /local /next /scan /rm /clear /list")
 
     threading.Thread(target=player, args=(mumble,), daemon=True).start()
 
