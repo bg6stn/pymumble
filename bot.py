@@ -322,12 +322,9 @@ def player(mumble):
                 if speaker_enabled:
                     if not speaker_proc:
                         speaker_proc = subprocess.Popen(
-                            ["ffmpeg", "-loglevel", "error",
-                             "-f", "s16le", "-ar", str(RATE), "-ac", "2",
-                             "-i", "pipe:0",
-                             "-af", "volume=%.2f" % play_volume,
-                             "-f", "s16le", "-"
-                             "| aplay -D %s -f S16_LE -r %d -c 2 -q" % (SPEAKER_DEVICE, RATE)],
+                            "ffmpeg -loglevel error -f s16le -ar %d -ac 2 -i pipe:0 "
+                            "-af volume=%.2f -f s16le - | "
+                            "aplay -D %s -f S16_LE -r %d -c 2 -q" % (RATE, play_volume, SPEAKER_DEVICE, RATE),
                             stdin=subprocess.PIPE, shell=True
                         )
                     try:
