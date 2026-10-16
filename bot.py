@@ -195,34 +195,33 @@ def on_text_received(message):
         stop_all()
         reply = "已停止"
 
-    elif cmd == "local":
+    elif cmd in ("local", "lo"):
         reply = start_music(mumble)
 
-    elif cmd == "next":
+    elif cmd in ("next", "n"):
         if mode == "music":
             reply = play_next_song(mumble)
         else:
-            reply = "当前不在本地音乐模式，发 /local 开始"
+            reply = "当前不在本地音乐模式，发 /lo 开始"
 
-    elif cmd == "rand":
+    elif cmd in ("rand", "r"):
         play_mode = "rand"
         reply = "随机播放"
 
-    elif cmd == "seq":
+    elif cmd in ("seq", "se"):
         play_mode = "seq"
         reply = "顺序播放"
 
-    elif cmd == "rep":
+    elif cmd in ("rep", "re"):
         play_mode = "rep"
         reply = "单曲循环"
 
-    elif cmd == "scan":
+    elif cmd in ("scan", "s"):
         n = len(music_list)
         scan_music()
         reply = "重新扫描完成: %d -> %d 首" % (n, len(music_list))
 
     elif cmd == "rm":
-        # /rm 3 删除第3首
         if len(parts) < 2 or not parts[1].isdigit():
             reply = "用法: /rm 3  (删除列表第3首，不删文件)"
         else:
@@ -235,13 +234,13 @@ def on_text_received(message):
             else:
                 reply = "序号超出范围，当前共%d首" % len(music_list)
 
-    elif cmd == "clear":
+    elif cmd in ("clear", "c"):
         n = len(music_list)
         music_list.clear()
         stop_all()
         reply = "已清空播放列表 (%d首)" % n
 
-    elif cmd == "list":
+    elif cmd in ("list", "ls"):
         lines = ["=== 电台 ==="]
         for k, v in STATIONS.items():
             mark = " (当前)" if k == current_station and mode == "radio" else ""
@@ -257,20 +256,22 @@ def on_text_received(message):
                 lines.append("  %s%d. %s" % (mark, i + 1, os.path.basename(f)))
         reply = "\n".join(lines)
 
-    elif cmd == "help":
+    elif cmd in ("help", "h"):
         reply = (
             "=== 命令 (都以/开头) ===\n"
             "/p            播放/继续\n"
             "/t            停止\n"
             "/p1 /p2       切换电台\n"
-            "/local        播放本地音乐\n"
-            "/next         下一首\n"
-            "/rand /seq /rep  随机/顺序/单曲\n"
-            "/scan         重新扫描音乐目录\n"
+            "/lo /local    播放本地音乐\n"
+            "/n /next      下一首\n"
+            "/r /rand      随机播放\n"
+            "/se /seq      顺序播放\n"
+            "/re /rep      单曲循环\n"
+            "/s /scan      重新扫描音乐目录\n"
             "/rm 3         删除列表第3首(不删文件)\n"
-            "/clear        清空播放列表\n"
-            "/list         查看电台和歌曲\n"
-            "/help         本帮助"
+            "/c /clear     清空播放列表\n"
+            "/ls /list     查看电台和歌曲\n"
+            "/h /help      本帮助"
         )
     else:
         return
