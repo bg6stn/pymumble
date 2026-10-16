@@ -25,6 +25,8 @@ NICK = "Radio-Bot"
 MUSIC_DIR = "/root/music"
 MIC_DEVICE = "plughw:0,0"
 SPEAKER_DEVICE = "plughw:0,0"
+PTT_PIN = 18  # BCM引脚，控制电台PTT，下拉发射
+PTT_GPIO = None
 STATIONS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stations.json")
 STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "state.json")
 
@@ -128,6 +130,30 @@ queue_size = 300
 
 def get_chunk_size():
     return int(RATE * 2 * CHANNELS * chunk_ms / 1000)
+
+
+def init_gpio():
+    global PTT_GPIO
+    try:
+        import RPi.GPIO as GPIO
+        GPIO.setmode(GPIO.BCM)
+        GPIO.setup(PTT_PIN, GPIO.OUT, initial=GPIO.HIGH)
+        PTT_GPIO = GPIO
+        print("GPIO PTT初始化成功 (BCM%d, 默认高电平=接收)" % PTT_PIN)
+    except Exception as e:
+        print("GPIO初始化失败: %s (将使用命令行PTT)" % e)
+
+
+def ptx_tx():
+    if PTT_GPIO:
+        PTT_GPIO.output(PTT_PIN, PTT_GPIO.LOW)
+        print("[PTT] 发射")
+
+
+def ptx_rx():
+    if PTT_GPIO:
+        PTT_GPIO.output(PTT_PIN, PTT_GPIO.HIGH)
+        print("[PTT] 接收")
 
 
 def rebuild_queue():
@@ -376,22 +402,30 @@ def parse_cmd(text):
 
 
 def on_sound_received(user, sound):
-    """对讲模式：频道声音→喇叭（mic说话时暂停喇叭）"""
+    """对讲模式：频道声音→喇叭+PTT发射电台"""
     global channel_active, channel_timer
-    if not listening or not speaker_proc:
+    if not listening:
         return
     try:
         pcm = sound.pcm
         if pcm:
             if not mic_active:
-                speaker_proc.stdin.write(pcm)
+                if speaker_proc:
+                    speaker_proc.stdin.write(pcm)
+                ptx_tx()
             channel_active = True
             if channel_timer:
                 channel_timer.cancel()
-            channel_timer = threading.Timer(0.3, set_channel_inactive)
+            channel_timer = threading.Timer(0.3, on_channel_silent)
             channel_timer.start()
     except Exception:
         pass
+
+
+def on_channel_silent():
+    global channel_active
+    channel_active = False
+    ptx_rx()
 
 
 def set_channel_inactive():
@@ -697,6 +731,8 @@ if __name__ == "__main__":
     mumble.set_codec_profile("audio")
     mumble.set_bandwidth(192000)
     mumble.set_receive_sound(True)
+
+    init_gpio()
 
     # 给已存在的用户补初始化sound对象（连接后才开启receive_sound）
     from pymumble_py3 import soundqueue
