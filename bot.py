@@ -29,21 +29,29 @@ CHANNELS = 1
 CHUNK_MS = 10
 CHUNK_SIZE = int(RATE * 2 * CHUNK_MS / 1000)
 
-# ===== 电台列表 =====
-DEFAULT_STATIONS = {
-    "1": {"name": "中国之声", "url": "https://ngcdn001.cnr.cn/live/zgzs/index.m3u8"},
-    "2": {"name": "经济之声", "url": "https://ngcdn002.cnr.cn/live/jjzs/index.m3u8"},
-}
+# ===== 内置央广电台（URL路径，播放时自动刷新签名）=====
+CNR_BUILTIN = [
+    ("zgzs", "中国之声", "https://ngcdn001.cnr.cn/live/zgzs/index.m3u8"),
+    ("jjzs", "经济之声", "https://ngcdn002.cnr.cn/live/jjzs/index.m3u8"),
+    ("yyzs", "音乐之声", "https://ngcdn003.cnr.cn/live/yyzs/index.m3u8"),
+    ("dszs", "经典音乐广播", "https://ngcdn004.cnr.cn/live/dszs/index.m3u8"),
+    ("zhzs", "台海之声", "https://ngcdn005.cnr.cn/live/zhzs/index.m3u8"),
+    ("szzs", "神州之声", "https://ngcdn006.cnr.cn/live/szzs/index.m3u8"),
+    ("hxzs", "大湾区之声", "https://ngcdn007.cnr.cn/live/hxzs/index.m3u8"),
+    ("xgzs", "香港之声", "https://ngcdn008.cnr.cn/live/xgzs/index.m3u8"),
+    ("mzzs", "民族之声", "https://ngcdn009.cnr.cn/live/mzzs/index.m3u8"),
+    ("wyzs", "文艺之声", "https://ngcdn010.cnr.cn/live/wyzs/index.m3u8"),
+    ("lnzs", "老年之声", "https://ngcdn011.cnr.cn/live/lnzs/index.m3u8"),
+    ("zygb", "藏语广播", "https://ngcdn012.cnr.cn/live/zygb/index.m3u8"),
+    ("wygb", "维语广播", "https://ngcdn013.cnr.cn/live/wygb/index.m3u8"),
+    ("gsgljtgb", "中国交通广播", "https://ngcdn016.cnr.cn/live/gsgljtgb/index.m3u8"),
+    ("xczs", "中国乡村之声", "https://ngcdn017.cnr.cn/live/xczs/index.m3u8"),
+    ("hygb", "哈语广播", "https://ngcdn025.cnr.cn/live/hygb/index.m3u8"),
+]
 
-# 央广频道路径映射（用于自动刷新签名）
-CNR_CHANNELS = {
-    "zgzs": "中国之声", "jjzs": "经济之声", "yyzs": "音乐之声",
-    "dszs": "经典音乐广播", "zhzs": "台海之声", "szzs": "神州之声",
-    "hxzs": "大湾区之声", "xgzs": "香港之声", "mzzs": "民族之声",
-    "wyzs": "文艺之声", "lnzs": "老年之声", "zygb": "藏语广播",
-    "wygb": "维语广播", "gsgljtgb": "中国交通广播", "xczs": "中国乡村之声",
-    "hygb": "哈语广播",
-}
+DEFAULT_STATIONS = {}
+for i, (code, name, url) in enumerate(CNR_BUILTIN, 1):
+    DEFAULT_STATIONS[str(i)] = {"name": name, "url": url}
 
 
 def refresh_cnr_urls():
@@ -367,6 +375,13 @@ def on_text_received(message):
             save_stations()
             reply = "已删除电台: %s" % name
 
+    elif cmd in ("reset", "rs"):
+        global STATIONS
+        stop_all()
+        STATIONS = dict(DEFAULT_STATIONS)
+        save_stations()
+        reply = "已恢复默认央广电台 (%d个)" % len(STATIONS)
+
     elif cmd in ("help", "h"):
         reply = (
             "=== 命令 (都以/开头) ===\n"
@@ -384,6 +399,7 @@ def on_text_received(message):
             "/add 名称 url  添加电台\n"
             "/add url      自动识别名称\n"
             "/del 1        删除电台\n"
+            "/rs /reset    恢复默认央广电台\n"
             "/ls /list     查看电台和歌曲\n"
             "/h /help      本帮助"
         )
