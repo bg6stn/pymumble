@@ -22,6 +22,7 @@ PORT = 64738
 PASSWORD = ""
 NICK = "Radio-Bot"
 MUSIC_DIR = "/root/music"
+MIC_DEVICE = "plughw:1,0"
 STATIONS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stations.json")
 STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "state.json")
 
@@ -106,8 +107,10 @@ play_mode = "seq"
 music_list = []
 music_index = 0
 current_proc = None
+mic_proc = None
 audio_queue = queue.Queue(maxsize=300)
 playing = False
+listening = False
 
 
 def save_state():
@@ -178,6 +181,39 @@ def ffmpeg_reader(url):
                 audio_queue.put(data)
             except queue.Empty:
                 pass
+
+
+def mic_listener(mumble):
+    """从声卡录制mic，直接播放到Mumble频道"""
+    global mic_proc
+    cmd = [
+        "ffmpeg", "-loglevel", "error",
+        "-f", "alsa",
+        "-ac", str(CHANNELS),
+        "-ar", str(RATE),
+        "-i", MIC_DEVICE,
+        "-f", "s16le", "-acodec", "pcm_s16le", "-"
+    ]
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=CHUNK_SIZE)
+    mic_proc = proc
+    while True:
+        if proc.poll() is not None:
+            break
+        data = proc.stdout.read(CHUNK_SIZE)
+        if not data:
+            break
+        mumble.sound_output.add_sound(data)
+
+
+def stop_mic():
+    global mic_proc, listening
+    listening = False
+    if mic_proc:
+        try:
+            mic_proc.terminate()
+        except Exception:
+            pass
+        mic_proc = None
 
 
 def player(mumble):
@@ -270,7 +306,7 @@ def parse_cmd(text):
 
 
 def on_text_received(message):
-    global play_mode, music_index, STATIONS
+    global play_mode, music_index, STATIONS, listening
     text = strip_html(message.message).strip()
     sender = message.actor
     user = mumble.users[sender]["name"] if sender in mumble.users else "未知"
@@ -295,7 +331,20 @@ def on_text_received(message):
 
     elif cmd == "t":
         stop_all()
+        stop_mic()
         reply = "已停止"
+
+    elif cmd in ("jt",):
+        if listening:
+            stop_mic()
+            reply = "退出监听，恢复播放"
+            start_station(mumble, current_station)
+        else:
+            stop_all()
+            stop_mic()
+            listening = True
+            threading.Thread(target=mic_listener, args=(mumble,), daemon=True).start()
+            reply = "话筒监听中 (%s)，再发 /jt 退出" % MIC_DEVICE
 
     elif cmd in ("local", "lo"):
         reply = start_music(mumble)
@@ -417,6 +466,7 @@ def on_text_received(message):
             "=== 命令 (都以/开头) ===\n"
             "/p            播放/继续/查看当前\n"
             "/t            停止\n"
+            "/jt           话筒监听/退出监听\n"
             "/p1 /p2       切换电台\n"
             "/lo /local    播放本地音乐\n"
             "/n /next      下一首/下一电台\n"
