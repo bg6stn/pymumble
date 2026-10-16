@@ -334,6 +334,10 @@ def player(mumble):
                     try:
                         speaker_proc.stdin.write(data)
                     except BrokenPipeError:
+                        try:
+                            speaker_proc.kill()
+                        except Exception:
+                            pass
                         speaker_proc = None
                 time.sleep(chunk_ms / 1000.0)
             except queue.Empty:
@@ -398,11 +402,13 @@ def play_item(mumble, idx):
         return "序号不存在 (共%d项)" % len(pl)
     item = pl[idx]
     if item["type"] == "radio":
-        return start_station(mumble, item["id"])
+        start_station(mumble, item["id"])
+        return "播放: /p%d %s" % (idx + 1, item["name"])
     else:
         global music_index
         music_index = item["id"]
-        return play_song(mumble, item["path"])
+        play_song(mumble, item["path"])
+        return "播放: /p%d %s" % (idx + 1, item["name"])
 
 
 def play_song(mumble, song):
