@@ -521,10 +521,10 @@ def on_text_received(message):
             chunk_ms = 100
             reply = "块大小恢复默认: %dms" % chunk_ms
         elif parts[1] == "+":
-            chunk_ms = min(500, chunk_ms + 100)
+            chunk_ms = min(500, chunk_ms + 50)
             reply = "块大小: %dms" % chunk_ms
         elif parts[1] == "-":
-            chunk_ms = max(100, chunk_ms - 100)
+            chunk_ms = max(50, chunk_ms - 50)
             reply = "块大小: %dms" % chunk_ms
         else:
             reply = "块大小: %dms  (/ck + /ck -)" % chunk_ms
