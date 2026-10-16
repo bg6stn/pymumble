@@ -111,9 +111,10 @@ current_proc = None
 mic_proc = None
 speaker_proc = None
 audio_queue = queue.Queue(maxsize=1000)
-monitor_queue = queue.Queue(maxsize=500)
 playing = False
 listening = False
+channel_active = False
+channel_timer = None
 
 # 可调音频参数（默认值）
 mic_gain = 3.0
@@ -248,7 +249,8 @@ def mic_listener(mumble):
         data = p2.stdout.read(get_chunk_size())
         if not data:
             break
-        mumble.sound_output.add_sound(data)
+        if not channel_active:
+            mumble.sound_output.add_sound(data)
         time.sleep(chunk_ms / 1000.0)
         cnt += 1
         if cnt % 100 == 0:
@@ -365,15 +367,26 @@ def parse_cmd(text):
 
 
 def on_sound_received(user, sound):
-    """监听模式下，频道其他人的声音从本地声卡播放（不回传Mumble）"""
+    """对讲模式：频道声音→本地喇叭，同时暂停mic发送防回声"""
+    global channel_active, channel_timer
     if not listening or not speaker_proc:
         return
     try:
         pcm = sound.pcm
         if pcm:
             speaker_proc.stdin.write(pcm)
+            channel_active = True
+            if channel_timer:
+                channel_timer.cancel()
+            channel_timer = threading.Timer(0.3, set_channel_inactive)
+            channel_timer.start()
     except Exception:
         pass
+
+
+def set_channel_inactive():
+    global channel_active
+    channel_active = False
 
 
 def on_text_received(message):
