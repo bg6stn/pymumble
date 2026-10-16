@@ -119,7 +119,7 @@ mic_active = False
 mic_timer = None
 
 # 可调音频参数（默认值）
-mic_gain = 3.0
+mic_gain = 1.0
 play_volume = 1.0
 bandwidth_kbps = 128
 chunk_ms = 10
@@ -457,7 +457,7 @@ def on_text_received(message):
     elif cmd == "mic":
         global mic_gain
         if len(parts) < 2:
-            mic_gain = 3.0
+            mic_gain = 1.0
             reply = "话筒增益恢复默认: %.1fx" % mic_gain
         elif parts[1] == "+":
             mic_gain = min(10.0, mic_gain + 0.5)
