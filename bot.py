@@ -109,6 +109,7 @@ music_index = 0
 current_proc = None
 mic_proc = None
 audio_queue = queue.Queue(maxsize=1000)
+monitor_queue = queue.Queue(maxsize=500)
 playing = False
 listening = False
 
@@ -245,8 +246,16 @@ def mic_listener(mumble):
         data = p2.stdout.read(get_chunk_size())
         if not data:
             break
-        mumble.sound_output.add_sound(data)
-        time.sleep(chunk_ms / 1000.0)
+        try:
+            monitor_queue.put_nowait(data)
+        except queue.Full:
+            monitor_queue.get_nowait()
+            monitor_queue.put_nowait(data)
+        # 发送mic数据 + 频道收到的声音
+        while not monitor_queue.empty():
+            chunk = monitor_queue.get_nowait()
+            mumble.sound_output.add_sound(chunk)
+            time.sleep(chunk_ms / 1000.0)
         cnt += 1
         if cnt % 100 == 0:
             print("[mic] 已发送 %d chunks" % cnt)
@@ -355,13 +364,12 @@ def parse_cmd(text):
 
 
 def on_sound_received(user, sound):
-    """监听模式下，把频道其他人的声音转发（双工）"""
+    """监听模式下，把频道其他人的声音放入监听队列"""
     if not listening:
         return
     try:
         pcm = sound.pcm
         if pcm:
-            # 收到的是单声道数据，上混成立体声（左右相同）
             if CHANNELS == 2 and len(pcm) % 2 == 0:
                 import struct
                 samples = struct.unpack("<%dh" % (len(pcm) // 2), pcm)
@@ -369,7 +377,11 @@ def on_sound_received(user, sound):
                 for s in samples:
                     stereo.extend([s, s])
                 pcm = struct.pack("<%dh" % len(stereo), *stereo)
-            mumble.sound_output.add_sound(pcm)
+            try:
+                monitor_queue.put_nowait(pcm)
+            except queue.Full:
+                monitor_queue.get_nowait()
+                monitor_queue.put_nowait(pcm)
     except Exception as e:
         print("on_sound_received error: %s" % e)
 
