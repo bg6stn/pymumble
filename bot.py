@@ -22,7 +22,7 @@ PORT = 64738
 PASSWORD = ""
 NICK = "Radio-Bot"
 MUSIC_DIR = "/root/music"
-MIC_DEVICE = "plughw:1,0"
+MIC_DEVICE = "plughw:0,0"
 STATIONS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stations.json")
 STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "state.json")
 
