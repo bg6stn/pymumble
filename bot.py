@@ -187,13 +187,16 @@ def mic_listener(mumble):
     """从声卡录制mic，放入队列统一播放"""
     global mic_proc
     time.sleep(1)
+    # 用arecord录制，ALSA原生支持更稳
     cmd = [
-        "ffmpeg", "-loglevel", "warning",
-        "-f", "alsa",
-        "-ac", str(CHANNELS),
-        "-ar", str(RATE),
-        "-i", MIC_DEVICE,
-        "-f", "s16le", "-acodec", "pcm_s16le", "-"
+        "arecord",
+        "-D", MIC_DEVICE,
+        "-f", "S16_LE",
+        "-r", str(RATE),
+        "-c", str(CHANNELS),
+        "-t", "raw",
+        "-q",
+        "-"
     ]
     print("mic_listener: 启动录制 %s" % MIC_DEVICE)
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=CHUNK_SIZE)
@@ -201,7 +204,7 @@ def mic_listener(mumble):
     time.sleep(0.5)
     if proc.poll() is not None:
         err = proc.stderr.read().decode("utf-8", errors="replace")
-        print("mic_listener: ffmpeg启动失败: %s" % err[:500])
+        print("mic_listener: arecord启动失败: %s" % err[:500])
         return
     print("mic_listener: 录制中")
     while True:
