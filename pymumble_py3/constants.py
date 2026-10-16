@@ -17,6 +17,17 @@ PYMUMBLE_LOOP_RATE = 0.01   # pause done between two iteration of the main loop 
 # ============================================================================
 # Constants
 # ============================================================================
+# Mumble 协议版本号 (major, minor, patch)
+#
+# 兼容性说明：
+#   - 本常量保持 (1, 4, 287) 不变，对应 Mumble 1.4.287 协议。
+#   - 经实测与调研，Mumble 1.5/1.6 服务器对 1.4 协议客户端保持向后兼容，
+#     通过 TCP UDPTunnel 模式可正常连接与收发音频。
+#   - Mumble 1.5 的核心协议变化是：UDP 直连音频改用 Protobuf 格式
+#     （MumbleUDP.proto），并只保留 Opus 编码。本库当前 udp_active=False，
+#     所有音频均走 TCP UDPTunnel，因此不受该变化影响。
+#   - Mumble 1.5+ 的 Protobuf UDP 音频模式暂未实现，作为未来扩展方向。
+#   - 因此本库实际支持服务器版本范围为：Mumble 1.3.x ~ 1.6.x（TCP 模式）。
 PYMUMBLE_PROTOCOL_VERSION = (1, 4, 287)
 PYMUMBLE_VERSION_STRING = "PyMumble %s" % PYMUMBLE_VERSION
 PYMUMBLE_OS_STRING = "PyMumble %s" % PYMUMBLE_VERSION

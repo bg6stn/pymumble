@@ -1,0 +1,74 @@
+syntax = "proto2";
+
+// ============================================================================
+// MumbleUDP.proto — Mumble 1.5+ Protobuf UDP 音频消息格式
+// ============================================================================
+//
+// 本文件作为未来扩展方向保留：Mumble 1.5 起，UDP 直连音频改用 Protobuf
+// 格式（替代旧版二进制紧凑格式），并只保留 Opus 编码。
+//
+// 当前 pymumble 库 udp_active=False，所有音频均通过 TCP UDPTunnel 传输，
+// 因此本 .proto 暂未用于代码运行，也未生成对应的 _pb2.py。
+// 待未来实现真正的 UDP 音频传输时，再用 protoc 生成代码并接入。
+//
+// 参考: https://github.com/mumble-voip/mumble/blob/master/src/MumbleUDP.proto
+// ============================================================================
+
+message MumbleUDP {
+    message Audio {
+        enum FrameType {
+            // 普通语音帧
+            AUDIO = 0;
+            // 终帧（通话结束标记）
+            END_OF_STREAM = 1;
+        }
+
+        message TargetAudio {
+            // Opus 编码的音频数据
+            optional bytes opus = 1;
+
+            // 目标编号（与语音目标 VoiceTarget 对应）
+            optional uint32 target = 2 [default = 0];
+        }
+
+        // 用户会话 ID
+        optional uint32 session = 1;
+
+        // 序列号（用于丢包检测与乱序重排）
+        optional sint64 sequence = 2;
+
+        // 多目标音频（与旧版单目标音频互斥）
+        repeated TargetAudio targets = 3;
+
+        // 位置信息（三维坐标，用于空间音频）
+        repeated float position = 4;
+
+        // 是否使用矩阵变换
+        repeated float volume_matrix = 5;
+
+        // 帧类型
+        optional FrameType frame_type = 6 [default = AUDIO];
+
+        // 说话者上下文标识（用于关联同一说话者的连续帧）
+        optional uint64 context_version = 7;
+    }
+
+    // 客户端 -> 服务器：请求同步状态
+    message Request {
+        // 请求服务器同步服务器状态
+        optional bool sync = 1;
+        // 请求服务器同步用户状态
+        repeated uint32 user_state = 2;
+    }
+
+    message Ping {
+        // 时间戳（毫秒）
+        optional uint64 timestamp = 1;
+    }
+
+    oneof message {
+        Audio audio = 1;
+        Request request = 2;
+        Ping ping = 3;
+    }
+}
