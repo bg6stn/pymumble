@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 # 播放机器人（流媒体 + 本地音乐）
-# Mumble频道文本命令：
-#   p / 播放       播放/继续
-#   t / 停止       停止
-#   p1 p2 p3      切换电台（p1和p 1都识别）
-#   local / 本地   开始播放本地音乐
-#   rand / 随机   随机播放
-#   seq / 顺序    顺序播放
-#   rep / 单曲    单曲循环
-#   list / 列表   查看电台/歌曲列表
-#   help / 帮助   查看命令
+# 所有命令以 / 开头：
+#   /p            播放/继续
+#   /t            停止
+#   /p1 /p2       切换电台（/p1 和 /p 1 都识别）
+#   /local        开始播放本地音乐
+#   /rand         随机播放
+#   /seq          顺序播放
+#   /rep          单曲循环
+#   /next         下一首
+#   /list         查看电台/歌曲列表
+#   /help         查看帮助
 import pymumble_py3
 import subprocess
 import time
@@ -27,7 +28,7 @@ SERVER = "127.0.0.1"
 PORT = 64738
 PASSWORD = ""
 NICK = "Radio-Bot"
-MUSIC_DIR = "/root/music"   # 本地音乐目录
+MUSIC_DIR = "/root/music"
 
 RATE = 48000
 CHANNELS = 1
@@ -41,9 +42,9 @@ STATIONS = {
 }
 
 # ===== 状态 =====
-mode = "idle"          # idle / radio / music
+mode = "idle"
 current_station = "1"
-play_mode = "seq"      # seq=顺序, rand=随机, rep=单曲
+play_mode = "seq"
 music_list = []
 music_index = 0
 current_proc = None
@@ -52,7 +53,6 @@ playing = False
 
 
 def scan_music():
-    """扫描本地音乐目录"""
     global music_list
     exts = ("*.mp3", "*.wav", "*.ogg", "*.flac", "*.m4a")
     files = []
@@ -63,7 +63,6 @@ def scan_music():
 
 
 def ffmpeg_reader(url):
-    """拉流/读文件并写入队列"""
     global current_proc
     cmd = [
         "ffmpeg", "-loglevel", "error",
@@ -87,7 +86,6 @@ def ffmpeg_reader(url):
 
 
 def player(mumble):
-    """从队列取数据喂给Mumble"""
     time.sleep(0.5)
     while True:
         if playing:
@@ -102,7 +100,6 @@ def player(mumble):
 
 
 def stop_all():
-    """停止一切播放"""
     global playing, current_proc, mode
     playing = False
     mode = "idle"
@@ -120,7 +117,6 @@ def stop_all():
 
 
 def start_station(mumble, sid):
-    """开始播放电台"""
     global current_station, mode
     stop_all()
     current_station = sid
@@ -131,7 +127,6 @@ def start_station(mumble, sid):
 
 
 def play_next_song(mumble):
-    """播放下一首本地歌曲"""
     global music_index
     if not music_list:
         scan_music()
@@ -139,10 +134,10 @@ def play_next_song(mumble):
         return "本地音乐目录无歌曲"
 
     if play_mode == "rep":
-        pass  # 单曲循环，不切歌
+        pass
     elif play_mode == "rand":
         music_index = random.randint(0, len(music_list) - 1)
-    else:  # seq
+    else:
         music_index = (music_index + 1) % len(music_list)
 
     song = music_list[music_index]
@@ -155,7 +150,6 @@ def play_next_song(mumble):
 
 
 def start_music(mumble):
-    """开始本地音乐播放"""
     songs = scan_music()
     if not songs:
         return "本地音乐目录无歌曲: " + MUSIC_DIR
@@ -163,10 +157,13 @@ def start_music(mumble):
 
 
 def parse_cmd(text):
-    """解析命令，支持p1和p 1两种写法"""
-    t = text.strip().lower()
+    """解析命令，必须以/开头，支持/p1和/p 1"""
+    t = text.strip()
+    if not t.startswith("/"):
+        return None
+    t = t[1:]  # 去掉开头的/
 
-    # 处理 p1 p2 这种连写
+    # 处理 /p1 /p2 这种连写
     if t.startswith("p") and len(t) >= 2 and t[1:].isdigit():
         return ["p", t[1:]]
 
@@ -174,41 +171,47 @@ def parse_cmd(text):
 
 
 def on_text_received(message):
-    """处理文本命令"""
     text = message.message.strip()
     sender = message.actor
     user = mumble.users[sender]["name"] if sender in mumble.users else "未知"
 
     parts = parse_cmd(text)
-    cmd = parts[0] if parts else ""
+    if not parts:
+        return
 
+    cmd = parts[0].lower()
     reply = ""
 
-    if cmd in ("p", "播放"):
-        if len(parts) >= 1 and parts[-1] in STATIONS:
-            reply = start_station(mumble, parts[-1])
+    if cmd == "p":
+        if len(parts) >= 2 and parts[1] in STATIONS:
+            reply = start_station(mumble, parts[1])
         elif mode == "music":
-            # 继续播放下一首
             reply = play_next_song(mumble)
         else:
             reply = start_station(mumble, current_station)
 
-    elif cmd in ("t", "停止"):
+    elif cmd == "t":
         stop_all()
         reply = "已停止"
 
-    elif cmd in ("local", "本地"):
+    elif cmd == "local":
         reply = start_music(mumble)
 
-    elif cmd in ("rand", "随机"):
+    elif cmd == "next":
+        if mode == "music":
+            reply = play_next_song(mumble)
+        else:
+            reply = "当前不在本地音乐模式"
+
+    elif cmd == "rand":
         play_mode = "rand"
         reply = "随机播放"
 
-    elif cmd in ("seq", "顺序"):
+    elif cmd == "seq":
         play_mode = "seq"
         reply = "顺序播放"
 
-    elif cmd in ("rep", "单曲"):
+    elif cmd == "rep":
         play_mode = "rep"
         reply = "单曲循环"
 
@@ -216,7 +219,7 @@ def on_text_received(message):
         lines = ["=== 电台 ==="]
         for k, v in STATIONS.items():
             mark = " (当前)" if k == current_station and mode == "radio" else ""
-            lines.append("  p%s %s%s" % (k, v["name"], mark))
+            lines.append("  /p%s %s%s" % (k, v["name"], mark))
         lines.append("")
         lines.append("=== 本地音乐 ===")
         lines.append("  目录: " + MUSIC_DIR)
@@ -224,18 +227,19 @@ def on_text_received(message):
         lines.append("  模式: %s" % {"seq": "顺序", "rand": "随机", "rep": "单曲循环"}[play_mode])
         reply = "\n".join(lines)
 
-    elif cmd in ("help", "帮助"):
+    elif cmd == "help":
         reply = (
-            "=== 命令 ===\n"
-            "p / 播放      播放/继续\n"
-            "t / 停止      停止\n"
-            "p1 p2         切换电台（p1和p 1都行）\n"
-            "local / 本地  播放本地音乐\n"
-            "rand / 随机   随机播放\n"
-            "seq / 顺序    顺序播放\n"
-            "rep / 单曲    单曲循环\n"
-            "list / 列表   查看电台和歌曲\n"
-            "help / 帮助   本帮助"
+            "=== 命令 (都以/开头) ===\n"
+            "/p            播放/继续\n"
+            "/t            停止\n"
+            "/p1 /p2       切换电台\n"
+            "/local        播放本地音乐\n"
+            "/next         下一首\n"
+            "/rand         随机播放\n"
+            "/seq          顺序播放\n"
+            "/rep          单曲循环\n"
+            "/list         查看电台和歌曲\n"
+            "/help         本帮助"
         )
     else:
         return
@@ -248,7 +252,6 @@ def on_text_received(message):
 
 
 if __name__ == "__main__":
-    # 启动先扫描一次音乐
     scan_music()
     print("本地音乐目录: %s, 共%d首" % (MUSIC_DIR, len(music_list)))
 
@@ -258,7 +261,7 @@ if __name__ == "__main__":
     mumble.is_ready()
 
     print("Radio Bot 已连接 %s:%d" % (SERVER, PORT))
-    print("命令: p=播放, t=停止, p1/p2=电台, local=本地音乐, rand/seq/rep=播放模式")
+    print("命令: /p=播放, /t=停止, /p1 /p2=电台, /local=本地, /rand /seq /rep=模式")
 
     threading.Thread(target=player, args=(mumble,), daemon=True).start()
 
