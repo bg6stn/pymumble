@@ -259,7 +259,7 @@ def mic_listener(mumble):
             mic_active = True
             if mic_timer:
                 mic_timer.cancel()
-            mic_timer = threading.Timer(0.5, set_mic_inactive)
+            mic_timer = threading.Timer(0.3, set_mic_inactive)
             mic_timer.start()
         # 频道有人说话时不发mic
         if not channel_active:
@@ -388,7 +388,7 @@ def on_sound_received(user, sound):
             channel_active = True
             if channel_timer:
                 channel_timer.cancel()
-            channel_timer = threading.Timer(0.5, set_channel_inactive)
+            channel_timer = threading.Timer(0.3, set_channel_inactive)
             channel_timer.start()
     except Exception:
         pass
