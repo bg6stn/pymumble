@@ -119,10 +119,10 @@ mic_active = False
 mic_timer = None
 
 # 可调音频参数（默认值）
-mic_gain = 1.0
+mic_gain = 3.0
 play_volume = 1.0
 bandwidth_kbps = 128
-chunk_ms = 20
+chunk_ms = 10
 queue_size = 300
 
 
@@ -456,13 +456,13 @@ def on_text_received(message):
     elif cmd == "mic":
         global mic_gain
         if len(parts) < 2:
-            mic_gain = 1.0
+            mic_gain = 3.0
             reply = "话筒增益恢复默认: %.1fx" % mic_gain
         elif parts[1] == "+":
-            mic_gain = min(10.0, mic_gain + 0.5)
+            mic_gain = min(10.0, mic_gain + 1.0)
             reply = "话筒增益: %.1fx" % mic_gain
         elif parts[1] == "-":
-            mic_gain = max(0.5, mic_gain - 0.5)
+            mic_gain = max(0.5, mic_gain - 1.0)
             reply = "话筒增益: %.1fx" % mic_gain
         else:
             reply = "话筒增益: %.1fx  (/mic + /mic -)" % mic_gain
@@ -517,13 +517,13 @@ def on_text_received(message):
     elif cmd == "ck":
         global chunk_ms
         if len(parts) < 2:
-            chunk_ms = 20
+            chunk_ms = 10
             reply = "块大小恢复默认: %dms" % chunk_ms
         elif parts[1] == "+":
-            chunk_ms = min(150, chunk_ms + 10)
+            chunk_ms = min(80, chunk_ms + 5)
             reply = "块大小: %dms" % chunk_ms
         elif parts[1] == "-":
-            chunk_ms = max(10, chunk_ms - 10)
+            chunk_ms = max(5, chunk_ms - 5)
             reply = "块大小: %dms" % chunk_ms
         else:
             reply = "块大小: %dms  (/ck + /ck -)" % chunk_ms
