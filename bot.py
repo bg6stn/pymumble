@@ -584,11 +584,13 @@ def on_text_received(message):
 
     elif cmd == "on":
         speaker_enabled = True
-        reply = "本地喇叭已开启"
+        play_volume = 1.0
+        reply = "本地喇叭已开启 (100%)"
 
     elif cmd == "off":
         speaker_enabled = False
-        reply = "本地喇叭已关闭（/on恢复）"
+        play_volume = 0.0
+        reply = "本地喇叭已静音"
 
     elif cmd in ("local", "lo"):
         reply = start_music(mumble)
