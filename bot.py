@@ -109,7 +109,7 @@ music_list = []
 music_index = 0
 current_proc = None
 mic_proc = None
-audio_queue = queue.Queue(maxsize=500)
+audio_queue = queue.Queue(maxsize=1000)
 playing = False
 listening = False
 mic_gain = 3.0
@@ -588,7 +588,7 @@ if __name__ == "__main__":
 
     # 优化音质：音乐模式 + 高带宽
     mumble.set_codec_profile("audio")
-    mumble.set_bandwidth(128000)
+    mumble.set_bandwidth(192000)
 
     print("Radio Bot 已连接 %s:%d (立体声/音乐模式/128kbps)" % (SERVER, PORT))
     print("命令: /p /t /p1 /lo /n /r /se /re /s /rm /c /add /del /ls /h")
