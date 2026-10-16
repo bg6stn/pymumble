@@ -326,7 +326,11 @@ def player(mumble):
                              "-r", str(RATE), "-c", "2", "-q"],
                             stdin=subprocess.PIPE
                         )
-                    speaker_proc.stdin.write(data)
+                    # 应用本地音量
+                    import struct as _s
+                    samples = _s.unpack("<%dh" % (len(data) // 2), data)
+                    adjusted = [max(-32768, min(32767, int(s * play_volume))) for s in samples]
+                    speaker_proc.stdin.write(_s.pack("<%dh" % len(adjusted), *adjusted))
                 time.sleep(chunk_ms / 1000.0)
             except queue.Empty:
                 time.sleep(0.05)
@@ -517,13 +521,13 @@ def on_text_received(message):
             play_volume = 1.0
             reply = "播放音量恢复默认: %.1fx" % play_volume
         elif parts[1] == "+":
-            play_volume = min(5.0, play_volume + 0.5)
-            reply = "播放音量: %.1fx" % play_volume
+            play_volume = min(5.0, play_volume + 0.05)
+            reply = "播放音量: %.2fx" % play_volume
         elif parts[1] == "-":
-            play_volume = max(0.5, play_volume - 0.5)
-            reply = "播放音量: %.1fx" % play_volume
+            play_volume = max(0.0, play_volume - 0.05)
+            reply = "播放音量: %.2fx" % play_volume
         else:
-            reply = "播放音量: %.1fx  (/vol + /vol -)" % play_volume
+            reply = "播放音量: %.2fx  (/vol + /vol -)" % play_volume
 
     elif cmd == "bw":
         global bandwidth_kbps
@@ -577,7 +581,15 @@ def on_text_received(message):
         reply = "本地喇叭已开启"
 
     elif cmd == "off":
+        global speaker_proc
         speaker_enabled = False
+        if speaker_proc:
+            try:
+                speaker_proc.stdin.close()
+                speaker_proc.terminate()
+            except Exception:
+                pass
+            speaker_proc = None
         reply = "本地喇叭已关闭"
 
     elif cmd in ("local", "lo"):
