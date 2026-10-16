@@ -379,6 +379,30 @@ def start_station(mumble, sid):
     return "播放电台: /p%s %s" % (sid, STATIONS[sid]["name"])
 
 
+def get_playlist():
+    """返回合并播放列表：电台在前，音乐在后"""
+    pl = []
+    for sid in sorted(STATIONS.keys()):
+        pl.append({"type": "radio", "id": sid, "name": STATIONS[sid]["name"], "url": STATIONS[sid]["url"]})
+    for i, song in enumerate(music_list):
+        pl.append({"type": "music", "id": i, "name": os.path.basename(song), "path": song})
+    return pl
+
+
+def play_item(mumble, idx):
+    """播放列表第idx项"""
+    pl = get_playlist()
+    if idx < 0 or idx >= len(pl):
+        return "序号不存在 (共%d项)" % len(pl)
+    item = pl[idx]
+    if item["type"] == "radio":
+        return start_station(mumble, item["id"])
+    else:
+        global music_index
+        music_index = item["id"]
+        return play_song(mumble, item["path"])
+
+
 def play_song(mumble, song):
     global music_index, mode, playing
     stop_mic()
@@ -482,16 +506,9 @@ def on_text_received(message):
     reply = ""
 
     if cmd == "p":
-        if len(parts) >= 2 and parts[1] in STATIONS:
-            reply = start_station(mumble, parts[1])
-        elif len(parts) >= 2 and parts[1].isdigit() and mode == "music":
+        if len(parts) >= 2 and parts[1].isdigit():
             idx = int(parts[1]) - 1
-            if 0 <= idx < len(music_list):
-                music_index = idx
-                play_song(mumble, music_list[idx])
-                reply = "播放: %s" % os.path.basename(music_list[idx])
-            else:
-                reply = "曲目不存在 (共%d首)" % len(music_list)
+            reply = play_item(mumble, idx)
         elif mode == "music":
             reply = play_next_song(mumble)
         elif mode == "radio":
@@ -681,19 +698,12 @@ def on_text_received(message):
         reply = "已清空播放列表 (%d首)" % n
 
     elif cmd in ("list", "ls"):
-        lines = ["=== 电台 ==="]
-        for k, v in STATIONS.items():
-            mark = " (当前)" if k == current_station and mode == "radio" else ""
-            lines.append("  /p%s %s%s" % (k, v["name"], mark))
-        lines.append("")
-        lines.append("=== 本地音乐 (%d首) ===" % len(music_list))
-        lines.append("  目录: " + MUSIC_DIR)
-        lines.append("  模式: %s" % {"seq": "顺序", "rand": "随机", "rep": "单曲循环"}[play_mode])
-        lines.append("")
-        if music_list:
-            for i, f in enumerate(music_list):
-                mark = " ->" if i == music_index else "   "
-                lines.append("  %s%d. %s" % (mark, i + 1, os.path.basename(f)))
+        pl = get_playlist()
+        lines = ["=== 播放列表 (%d项) ===" % len(pl)]
+        for i, item in enumerate(pl):
+            tag = "电台" if item["type"] == "radio" else "音乐"
+            mark = " (当前)" if (mode == item["type"] and ((item["type"] == "radio" and current_station == item["id"]) or (item["type"] == "music" and music_index == item["id"]))) else ""
+            lines.append("  /p%d [%s] %s%s" % (i + 1, tag, item["name"], mark))
         reply = "\n".join(lines)
 
     elif cmd in ("add", "a"):
