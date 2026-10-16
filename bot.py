@@ -654,7 +654,13 @@ if __name__ == "__main__":
     mumble.set_bandwidth(192000)
     mumble.set_receive_sound(True)
 
-    print("Radio Bot 已连接 %s:%d (立体声/音乐模式/128kbps)" % (SERVER, PORT))
+    # 给已存在的用户补初始化sound对象（连接后才开启receive_sound）
+    from pymumble_py3 import soundqueue
+    for uid, u in mumble.users.items():
+        if getattr(u, "sound", None) is None:
+            u.sound = soundqueue.SoundQueue(mumble)
+
+    print("Radio Bot 已连接 %s:%d (立体声/音乐模式/192kbps)" % (SERVER, PORT))
     print("命令: /p /t /p1 /lo /n /r /se /re /s /rm /c /add /del /ls /h")
 
     threading.Thread(target=player, args=(mumble,), daemon=True).start()
