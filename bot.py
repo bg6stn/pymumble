@@ -378,7 +378,7 @@ def on_sound_received(user, sound):
             channel_active = True
             if channel_timer:
                 channel_timer.cancel()
-            channel_timer = threading.Timer(0.5, set_channel_inactive)
+            channel_timer = threading.Timer(1.0, set_channel_inactive)
             channel_timer.start()
     except Exception:
         pass
