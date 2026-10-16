@@ -14,6 +14,7 @@ import json
 import urllib.request
 from pymumble_py3.callbacks import (
     PYMUMBLE_CLBK_TEXTMESSAGERECEIVED as PTX,
+    PYMUMBLE_CLBK_SOUNDRECEIVED as PSND,
 )
 
 # ===== 配置 =====
@@ -111,6 +112,8 @@ mic_proc = None
 audio_queue = queue.Queue(maxsize=100)
 playing = False
 listening = False
+mic_gain = 3.0
+play_volume = 1.0
 
 
 def save_state():
@@ -185,9 +188,8 @@ def ffmpeg_reader(url):
 
 def mic_listener(mumble):
     """从声卡录制mic，放入队列统一播放"""
-    global mic_proc
+    global mic_proc, mic_gain
     time.sleep(1)
-    # arecord录制 -> ffmpeg音量放大
     rec = [
         "arecord",
         "-D", MIC_DEVICE,
@@ -202,11 +204,11 @@ def mic_listener(mumble):
         "ffmpeg", "-loglevel", "error",
         "-f", "s16le", "-ar", str(RATE), "-ac", str(CHANNELS),
         "-i", "pipe:0",
-        "-af", "volume=3.0",
+        "-af", "volume=%.1f" % mic_gain,
         "-f", "s16le", "-acodec", "pcm_s16le",
         "-"
     ]
-    print("mic_listener: 启动录制 %s (gain=5x)" % MIC_DEVICE)
+    print("mic_listener: 启动录制 %s (gain=%.1fx)" % (MIC_DEVICE, mic_gain))
     p1 = subprocess.Popen(rec, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     p2 = subprocess.Popen(gain, stdin=p1.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=CHUNK_SIZE)
     p1.stdout.close()
@@ -246,12 +248,23 @@ def stop_mic():
         mic_proc = None
 
 
+def apply_volume(data, vol):
+    """对16bit PCM数据做音量调整"""
+    if vol == 1.0:
+        return data
+    import struct
+    samples = struct.unpack("<%dh" % (len(data) // 2), data)
+    adjusted = [max(-32768, min(32767, int(s * vol))) for s in samples]
+    return struct.pack("<%dh" % len(adjusted), *adjusted)
+
+
 def player(mumble):
     time.sleep(1.0)
     while True:
         if playing or listening:
             try:
                 data = audio_queue.get(timeout=1)
+                data = apply_volume(data, play_volume)
                 mumble.sound_output.add_sound(data)
                 time.sleep(CHUNK_MS / 1000.0)
             except queue.Empty:
@@ -335,6 +348,18 @@ def parse_cmd(text):
     return t.split()
 
 
+def on_sound_received(mumble, sound, user):
+    """监听模式下，把频道其他人的声音也转发出去（双向）"""
+    if not listening:
+        return
+    try:
+        pcm = sound.pcm
+        if pcm:
+            mumble.sound_output.add_sound(pcm)
+    except Exception:
+        pass
+
+
 def on_text_received(message):
     global play_mode, music_index, STATIONS, listening
     text = strip_html(message.message).strip()
@@ -375,6 +400,19 @@ def on_text_received(message):
             listening = True
             threading.Thread(target=mic_listener, args=(mumble,), daemon=True).start()
             reply = "话筒监听中 (%s)，再发 /jt 退出" % MIC_DEVICE
+
+    elif cmd == "vol":
+        global mic_gain, play_volume
+        if len(parts) < 2:
+            reply = "话筒增益: %.1fx\n播放音量: %.1fx\n用法: /vol mic 5.0  或  /vol vol 2.0" % (mic_gain, play_volume)
+        elif parts[1] == "mic" and len(parts) >= 3:
+            mic_gain = float(parts[2])
+            reply = "话筒增益设为: %.1fx" % mic_gain
+        elif parts[1] == "vol" and len(parts) >= 3:
+            play_volume = float(parts[2])
+            reply = "播放音量设为: %.1fx" % play_volume
+        else:
+            reply = "用法: /vol mic 5.0  或  /vol vol 2.0"
 
     elif cmd in ("local", "lo"):
         reply = start_music(mumble)
@@ -497,6 +535,8 @@ def on_text_received(message):
             "/p            播放/继续/查看当前\n"
             "/t            停止\n"
             "/jt           话筒监听/退出监听\n"
+            "/vol mic 5.0  话筒增益\n"
+            "/vol vol 2.0  播放音量\n"
             "/p1 /p2       切换电台\n"
             "/lo /local    播放本地音乐\n"
             "/n /next      下一首/下一电台\n"
@@ -532,6 +572,7 @@ if __name__ == "__main__":
 
     mumble = pymumble_py3.Mumble(SERVER, NICK, port=PORT, password=PASSWORD)
     mumble.callbacks.set_callback(PTX, on_text_received)
+    mumble.callbacks.set_callback(PSND, on_sound_received)
     mumble.start()
     mumble.is_ready()
 
