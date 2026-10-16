@@ -186,7 +186,15 @@ class Mumble(threading.Thread):
 
             # Perform the Mumble authentication
             version = mumble_pb2.Version()
-            version.version = (PYMUMBLE_PROTOCOL_VERSION[0] << 16) + (PYMUMBLE_PROTOCOL_VERSION[1] << 8) + PYMUMBLE_PROTOCOL_VERSION[2]
+            # 与当前 mumble_pb2.py（Mumble 1.5 新 proto）匹配的双字段版本号格式：
+            #   version_v1 (uint32, field 1): 旧版 (major<<16)+(minor<<8)+patch
+            #   version_v2 (uint64, field 5): 新版 (major<<48)+(minor<<32)+(patch<<16)
+            # Mumble 1.5+ 服务器同时接受这两个字段。
+            if PYMUMBLE_PROTOCOL_VERSION[2] > 255:
+                version.version_v1 = (PYMUMBLE_PROTOCOL_VERSION[0] << 16) + (PYMUMBLE_PROTOCOL_VERSION[1] << 8) + 255
+            else:
+                version.version_v1 = (PYMUMBLE_PROTOCOL_VERSION[0] << 16) + (PYMUMBLE_PROTOCOL_VERSION[1] << 8) + PYMUMBLE_PROTOCOL_VERSION[2]
+            version.version_v2 = (PYMUMBLE_PROTOCOL_VERSION[0] << 48) + (PYMUMBLE_PROTOCOL_VERSION[1] << 32) + (PYMUMBLE_PROTOCOL_VERSION[2] << 16)
             version.release = self.application
             version.os = PYMUMBLE_OS_STRING
             version.os_version = PYMUMBLE_OS_VERSION_STRING
